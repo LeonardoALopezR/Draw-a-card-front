@@ -1,0 +1,9 @@
+{
+  "name": "draw-a-card-front",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@draw-a-card/web",
+    "dev:mobile": "npm run start --workspace=@draw-a-card/mobile"
+  }
+}
