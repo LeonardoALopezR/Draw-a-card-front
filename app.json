@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Draw-a-card",
+    "slug": "draw-a-card",
+    "scheme": "drawacard",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.drawacard.app"
+    },
+    "android": {
+      "package": "com.drawacard.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"]
+  }
+}

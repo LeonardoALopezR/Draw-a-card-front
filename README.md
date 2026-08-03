@@ -1,53 +1,47 @@
-# Draw-a-card — Frontend (Web + Mobile)
+# Draw-a-card — Frontend
 
-Monorepo containing the web client (Next.js) and mobile app (Expo/React Native) for the
-Draw-a-card TCG portfolio, scanning, social, and trading platform. Both talk to the
-`Draw-a-card` backend repo's API — see that repo for the database schema and API
-implementation.
+Single Expo (React Native) codebase targeting iOS, Android, and web (via
+`react-native-web`) for the Draw-a-card TCG portfolio, scanning, social, and trading
+platform. Talks to the `Draw-a-card` backend repo's API — see that repo for the database
+schema and API implementation.
 
-## Structure
+## Why one codebase
 
-```
-apps/
-  web/              Next.js web app
-  mobile/           Expo (React Native) mobile app
-packages/
-  shared/           API client factory, types, and Zod schemas used by BOTH apps
-specs/              one folder per feature spec (Spec Kit workflow output)
-.specify/           Spec Kit configuration, constitution, templates
-```
+Almost the entire product sits behind authentication — no public marketing pages, no
+SEO-critical surfaces. That's what makes a single Expo/`react-native-web` codebase the
+right tradeoff here instead of a separate Next.js web app: no duplicated screens, one
+team, one thing to ship. See `.specify/memory/constitution.md` Principle I for the full
+reasoning, including when this would be worth revisiting (a future public marketing site or
+public shop/auction listings meant to rank on Google).
 
-Why a shared package instead of copy-pasting: registration validation, API request shapes,
-and TypeScript types would otherwise drift between web and mobile as features are added.
-Only genuinely platform-agnostic logic lives in `packages/shared` — anything touching
-Next.js routing or React Native APIs stays in its own app. See
-`.specify/memory/constitution.md` Principle III for the exact boundary.
+## Designed for eventual native migration
+
+This app may later split into fully native apps (Kotlin/Swift) and/or a standalone React
+web app once the product and team have grown. To keep that realistic later:
+
+- **`src/domain/`** — plain TypeScript, zero React Native imports. API client shape, data
+  types, Zod validation schemas. Portable to any future codebase almost unchanged.
+- **`src/lib/`** — the Expo-specific adapter layer (Supabase client with secure storage,
+  the configured API instance). This is what a native rewrite would need to reimplement in
+  Kotlin/Swift; everything in `src/domain` stays as reference logic either way.
+- **`src/features/`** — UI screens/components, organized by domain, calling into
+  `src/domain`/`src/lib` rather than embedding business logic inline.
+
+See `.specify/memory/constitution.md` Principle IV for the binding rule on this boundary.
 
 ## Stack
 
-- **Web**: Next.js (App Router) + TypeScript + Tailwind CSS
-- **Mobile**: Expo + expo-router + TypeScript
-- **Shared**: TypeScript types, Zod validation schemas, a platform-agnostic API client
-  factory
-- **Auth**: Supabase Auth SDK on both platforms
-- **Data fetching**: React Query on both platforms
-
-See `.specify/memory/constitution.md` for the full, binding set of architecture decisions —
-kept consistent with the backend repo's own constitution.
+- Expo + expo-router, TypeScript, targeting iOS/Android/web from one codebase
+- React Query for data fetching
+- Supabase Auth SDK with `expo-secure-store` for session persistence on native
+- React Hook Form + Zod for forms/validation
 
 ## Spec-driven development
 
-Same workflow as the backend repo, using [Spec Kit](https://github.com/github/spec-kit).
-Note the pattern for platform-specific behavior:
-
-- `specs/001-registration-kyc-web-screens/` — the baseline spec (applies to both platforms
-  unless overridden)
-- `specs/002-registration-kyc-mobile-screens/` — extends the web spec, capturing *only*
-  what's different on mobile (native camera, SMS autofill, session persistence)
-
-Use this pattern for future features too: write the shared/baseline spec first, then a
-platform-specific spec only if real behavioral differences exist — don't create a mobile
-spec that just repeats the web one.
+Uses [Spec Kit](https://github.com/github/spec-kit). One spec per feature — platform
+differences (native camera vs. web file input, SMS autofill, etc.) are captured as inline
+"Platform notes" within each user story, not as separate documents. See
+`specs/001-registration-kyc/spec.md` for the pattern.
 
 ```
 /speckit-constitution   → already set up in .specify/memory/constitution.md
@@ -60,39 +54,33 @@ spec that just repeats the web one.
 
 ## Local setup
 
-Requires the backend running first (see the `Draw-a-card` repo's own local setup —
-`docker compose up` there).
+Requires the backend running first (`docker compose up` in the `Draw-a-card` backend repo).
 
 ```bash
-npm install                       # installs all workspaces (web, mobile, shared) at once
-
-# Web
-cp apps/web/.env.example apps/web/.env.local
-npm run dev:web                   # http://localhost:3001
-
-# Mobile
-cp apps/mobile/.env.example apps/mobile/.env
-npm run dev:mobile                # opens Expo dev tools; scan QR with Expo Go app
+cp .env.example .env
+npm install
+npm run web       # fastest to iterate on — opens in browser
+npm run ios       # or: npm run android
 ```
 
-**Note for mobile on a physical device**: `localhost` in `apps/mobile/.env` won't reach your
-dev machine from a phone. Replace it with your machine's LAN IP (e.g.
-`http://192.168.1.23:3000`) when testing via Expo Go instead of a simulator.
+**Physical device via Expo Go**: replace `localhost` in `.env` with your machine's LAN IP
+(e.g. `http://192.168.1.23:3000`) — `localhost` won't resolve from the phone to your dev
+machine. Web and simulators can keep using `localhost`.
 
-## Project structure detail
+## Project structure
 
 ```
-apps/web/src/
-  app/            Next.js App Router pages/layouts
-  features/       identity, catalog, portfolio, social, trading, scanner — mirrors backend
-  lib/            api.ts (wires the shared client), supabase-client.ts
-
-apps/mobile/
-  app/            expo-router screens
-  src/lib/        api.ts (wires the shared client), supabase-client.ts
-
-packages/shared/src/
-  api-client.ts   createApiClient() factory — platform provides baseUrl + token getter
-  types.ts        shared TypeScript types mirroring the backend Prisma schema
-  schemas.ts      shared Zod validation schemas for forms
+app/                expo-router screens (routing layer)
+src/
+  domain/           portable business logic — no RN imports (api-client, types, schemas)
+  lib/              Expo-specific wiring — Supabase client, configured API instance
+  features/
+    identity/       registration, KYC, profile — mirrors backend's identity module
+    catalog/        card browsing/search
+    portfolio/      portfolio/wallet screens
+    social/         feed, posts, comments
+    trading/        offers, auctions
+    scanner/        card scan upload + confirm flow
+specs/              one folder per feature spec (Spec Kit workflow output)
+.specify/           Spec Kit configuration, constitution, templates
 ```
