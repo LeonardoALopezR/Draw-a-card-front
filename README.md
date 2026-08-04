@@ -52,9 +52,57 @@ differences (native camera vs. web file input, SMS autofill, etc.) are captured 
 /speckit-implement      → implement task by task, with review between chunks
 ```
 
+### Subagents
+
+Four subagents in `.claude/agents/` wrap this pipeline so it's delegated consistently instead
+of drifting session to session:
+
+- **spec-writer** — runs specify → clarify → plan → tasks for a feature. Never writes
+  application code.
+- **task-implementer** — implements one task (or small batch) from an existing `tasks.md`
+  against its `plan.md`/`spec.md`. Never writes specs or plans.
+- **code-reviewer** — reviews a diff with no task context, fresh from the spec/plan/
+  constitution on disk. Read-only, never edits code.
+- **sdd-orchestrator** — drives a feature end-to-end by delegating to the three above, gating
+  on the constitution (no code without an on-disk plan, review after every task before the
+  next one starts).
+
+Use `sdd-orchestrator` for a whole feature; use the other three directly for a single phase.
+None of the four paste full results into chat — they write detail to `specs/<feature>/`,
+`progress/impl_<feature>.md`, and `progress/review_<feature>.md`, and return a one-line
+pointer.
+
+### Harness
+
+Beyond the agents, this repo tracks its own state on disk instead of relying on chat history:
+
+- **`AGENTS.md`** — the actual navigation map agents read first (`CLAUDE.md` just points here).
+- **`feature_list.json`** — status per feature plus the invariants (`one_feature_at_a_time`,
+  etc.) as a `rules` block.
+- **`progress/current.md` / `history.md`** — live session log and its append-only archive.
+- **`docs/conventions.md`, `docs/verification.md`** — code style and what "tested" means
+  (including that test tooling isn't installed yet — see that file).
+- **`CHECKPOINTS.md`** — a repo-hygiene self-audit `code-reviewer` walks before approving.
+- **`.claude/settings.json`** — hooks enforcing verification regardless of what an agent
+  decides: a type-check after every edit, and `./init.sh` after every turn (async, only
+  interrupts on failure).
+
 ## Local setup
 
 Requires the backend running first (`docker compose up` in the `Draw-a-card` backend repo).
+
+Run everything in one shot:
+
+```bash
+./init.sh   # install, type-check, expo-doctor, tests (once configured), web build check
+```
+
+Requires Node >= 20 (`nvm use`, pinned in `.nvmrc`). Safe to re-run — every stage is
+idempotent — and prints a pass/fail summary at the end (also what `sdd-orchestrator` runs
+once per session before delegating any work). Flags: `--skip-doctor`, `--skip-tests`,
+`--skip-build`.
+
+Or step through it manually:
 
 ```bash
 cp .env.example .env
@@ -83,4 +131,13 @@ src/
     scanner/        card scan upload + confirm flow
 specs/              one folder per feature spec (Spec Kit workflow output)
 .specify/           Spec Kit configuration, constitution, templates
+docs/               conventions.md, verification.md — shared rules agents point to
+progress/           current.md (live session log), history.md, impl_*/review_* reports
+.claude/
+  agents/           sdd-orchestrator, spec-writer, task-implementer, code-reviewer
+  settings.json     hooks that enforce verification automatically
+feature_list.json   feature backlog + status + harness invariants
+AGENTS.md           navigation map for agents (read this first)
+CHECKPOINTS.md      repo-hygiene self-audit checklist
+init.sh             one-shot local setup + verification
 ```

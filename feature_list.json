@@ -1,0 +1,23 @@
+{
+  "project": "draw-a-card-front",
+  "description": "Expo (React Native) app for the TCG card portfolio, scanning, social feed, and trading platform — iOS, Android, and web from one codebase.",
+  "rules": {
+    "one_feature_at_a_time": true,
+    "require_tests_to_close": true,
+    "require_approved_spec_to_implement": true,
+    "valid_status": ["pending", "spec_ready", "in_progress", "done", "blocked"],
+    "sdd_required_when": "feature has \"sdd\": true"
+  },
+  "features": [
+    {
+      "id": "001-registration-kyc",
+      "sdd": true,
+      "status": "pending",
+      "spec_dir": "specs/001-registration-kyc",
+      "created": "2026-08-02",
+      "updated": "2026-08-03",
+      "blocked_reason": null,
+      "notes": "spec.md has 1 open [NEEDS CLARIFICATION] marker (exact copy/UI for kycStatus pending vs rejected) and no plan.md/tasks.md yet. Mirrors the backend's 001-user-registration-kyc feature — field names and status values must stay consistent with it. Needs spec-writer (clarify -> plan -> tasks) before spec_ready."
+    }
+  ]
+}
