@@ -60,6 +60,25 @@
 - `src/domain` tests are pure TS/Jest, no rendering needed.
 - Component/screen tests use React Native Testing Library, asserting on rendered
   output/behavior — not implementation details (internal state, private functions).
+- **Exception — tests for `_layout.*` files under `app/` must NOT be colocated.** Put them in
+  the `src/features/<owning-module>/` directory instead (e.g.
+  `src/features/navigation/AppWebLayout.test.tsx` for `app/(app)/_layout.web.tsx`), importing
+  the layout file's default export by relative path
+  (`import AppWebLayout from "../../../app/(app)/_layout.web";`). Reason: `expo start`'s
+  dev-server route-manifest scan (`@expo/cli`'s `getRoutePaths` → `expo-router`'s
+  `getDirectoryTree`, a different code path from `expo export`'s static-export resolution and
+  not reachable by `metro.config.js`'s `resolver.blockList`) globs every `.ts(x)` file directly
+  under `app/` from disk. For layout files specifically, its conflict check is keyed only on
+  "same directory + same platform-specificity" — not on filename — and a `_layout.web.test.tsx`
+  file's `.test` segment is silently dropped by `expo-router`'s own filename parsing (it only
+  inspects the first two dot-segments), so `_layout.web.test.tsx` reads as a second
+  `_layout.web.tsx` in the same directory and `expo start --web` refuses to boot
+  ("the layouts ... conflict"). This is narrow to `_layout.*` files: ordinary colocated screen
+  tests (`app/(auth)/register.test.tsx`, `app/scan.test.tsx`, etc.) are unaffected, because
+  screen-route conflict detection is keyed on the full route *name*, and appending `.test`
+  before the extension always produces a distinct route name there — those stay colocated as
+  usual. See `progress/impl_004-home-scan-shell.md`'s dev-server-crash-fix entry for the full
+  investigation.
 
 ## Comments
 
