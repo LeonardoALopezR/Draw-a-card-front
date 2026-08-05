@@ -72,7 +72,11 @@ Each feature is one object in `feature_list.json`:
   Hard stop: never move to `in_progress` in the same turn you observe `spec_ready`, even if
   nothing looks wrong. Wait for an explicit go (e.g. "approved", "go ahead").
 - **in_progress** — you set this yourself after approval, updating `updated` in
-  `feature_list.json`. Then for each task, or small batch of independent `[P]` tasks, in
+  `feature_list.json`. **Then, before the first `task-implementer` call, invoke the
+  `feature-branch` skill** — it syncs `main` and cuts (or resumes) the feature's own branch,
+  named exactly after the feature id. One branch per feature, all its tasks on it, one PR back
+  to `main`. Don't delegate implementation while HEAD is still on `main` or on another
+  feature's branch. Then for each task, or small batch of independent `[P]` tasks, in
   `tasks.md`:
   1. Delegate to `task-implementer` with the specific task ID(s). It returns
      `done -> progress/impl_<feature>.md` or `blocked -> progress/impl_<feature>.md`.

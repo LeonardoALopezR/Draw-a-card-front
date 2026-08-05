@@ -42,10 +42,28 @@ parity covers native-only code paths (`.ios.tsx`/`.android.tsx` files, permissio
 
 ### Level 4 — Build check (automated)
 
-`init.sh`'s `npx expo export --platform web` stage confirms the app actually bundles. This
-catches import errors, missing platform files, and Metro config issues that type-checking
-alone won't. Already automatic — don't skip it (`--skip-build` is for the `Stop` hook's fast
-path only, not for a feature you're about to mark `done`).
+`init.sh` runs `npx expo export` **once per target — web, iOS, and Android** — confirming the
+app actually bundles on each. This catches import errors, missing platform files, and Metro
+config issues that type-checking alone won't. Already automatic — don't skip it
+(`--skip-build` / `--skip-native` are for the `Stop` hook's fast path only, not for a feature
+you're about to mark `done`).
+
+**Why all three, and what it still doesn't cover** (learned the hard way on
+`001-registration-kyc`, 2026-08-04): Metro resolves a *different module graph per platform*.
+Web goes through `react-native-web` and never touches the native module graph, so for an
+entire feature a green web-only export coexisted with an iOS app that crashed on launch. Each
+platform is now its own stage so the summary names the one that broke.
+
+These exports bundle JS; they do **not** compile a native binary, so they cannot catch a
+native-module *version* mismatch (`Cannot find native module 'ExpoLinking'`) — that only
+appears at runtime in Expo Go or a dev client. Stage 6, **Native dependency alignment**, is
+what guards that class: it fails when an `expo-router` peer dependency is installed but not
+declared in `package.json` (undeclared, npm floats it to the newest major, incompatible with
+the pinned SDK), and warns when installed versions drift from the SDK's expectations.
+
+Neither replaces Level 3 — actually running the app on a simulator remains the only way to
+catch runtime and integration failures. On this feature, manual iOS testing found two real
+bugs that 174 passing tests did not.
 
 ### Level 5 — Requirement traceability (mandatory for `"sdd": true` features)
 
