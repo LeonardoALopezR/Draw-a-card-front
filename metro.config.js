@@ -7,7 +7,18 @@
 // crashing Metro's dev server via its ensure-peer-deps check). Block-listing `*.test.ts(x)` from
 // Metro's module resolution keeps this repo's test colocation convention working for screens
 // under `app/`, exactly as it already works for `src/`, without expo-router ever seeing those
-// files as routes. Jest itself is unaffected — it reads jest.config.js, not this file.
+// files as routes when Metro *bundles* the app (both `expo export` and `expo start`'s actual
+// JS bundling go through this).
+//
+// IMPORTANT — this blockList does NOT reach every route-discovery code path. `expo start`'s
+// interactive dev server additionally computes a route *manifest* via a separate, filesystem-
+// globbing scan (`@expo/cli`'s `getRoutePaths` -> `expo-router`'s `getDirectoryTree`) that this
+// `resolver.blockList` cannot filter at all (confirmed by reading both packages' installed
+// source — there is no config hook for it in this expo-router/@expo-cli version). That scan is
+// what crashes on colocated `_layout.*.test.tsx` files specifically ("the layouts ... conflict"
+// on `expo start --web`, silent on `expo export`) — see docs/conventions.md's "Tests" section
+// and progress/impl_004-home-scan-shell.md's dev-server-crash-fix entry for the fix (relocate
+// those specific test files out of `app/`, not a config change here).
 const { getDefaultConfig } = require("expo/metro-config");
 const exclusionList = require("metro-config/src/defaults/exclusionList");
 
