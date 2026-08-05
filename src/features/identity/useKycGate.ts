@@ -74,7 +74,7 @@ const UNKNOWN_GATE_USER: GateUser = {
 // ((auth), (onboarding)) are transparent to the URL in expo-router, so no group prefix here —
 // see plan.md's Project Structure for the underlying file paths.
 export const KYC_ROUTE_TARGETS: Record<Exclude<KycRoute, "main">, string> = {
-  unauthenticated: "/register",
+  unauthenticated: "/login",
   "verify-phone": "/verify-phone",
   profile: "/profile",
   "kyc-status": "/kyc-status",

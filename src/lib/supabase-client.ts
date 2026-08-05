@@ -3,6 +3,12 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import WebSocketImpl from "ws";
 
+import type {
+  DiscardRecoverySession,
+  UpdateRecoveryPassword,
+  VerifyRecoveryCode,
+} from "../domain/passwordReset";
+
 // This file is intentionally Expo/RN-specific (unlike src/domain) — it's the adapter layer
 // that would need a native (Kotlin/Swift) or web-specific equivalent during a future
 // migration, per Constitution Principle IV. Keep this boundary clean: nothing outside
@@ -101,4 +107,84 @@ export async function signInWithPassword(
   } catch {
     return { error: NETWORK_SIGN_IN_ERROR_MESSAGE };
   }
+}
+
+// T010 (specs/005-login), FR-007: the real implementation of src/domain/passwordReset.ts's
+// injected `RequestPasswordReset` type. Runs on the shared/ambient `supabase` singleton above —
+// deliberately, unlike createPasswordRecoverySession() below — because
+// supabase.auth.resetPasswordForEmail() is fire-and-forget from the caller's point of view: it
+// never establishes or mutates a session on the client that calls it, so there is nothing here
+// for useKycGate() to react to. Mirrors signInWithPassword's exact MUST-NEVER-THROW try/catch
+// shape and reuses the same NETWORK_SIGN_IN_ERROR_MESSAGE for a network-level (not
+// credentials-level) failure, for the same reason T034's doc comment above explains.
+export async function requestPasswordReset(email: string): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    return { error: error?.message ?? null };
+  } catch {
+    return { error: NETWORK_SIGN_IN_ERROR_MESSAGE };
+  }
+}
+
+// T010 (specs/005-login), FR-008, spec.md Clarifications' "Recorded default 2": the real
+// implementation of src/domain/passwordReset.ts's injected VerifyRecoveryCode/
+// UpdateRecoveryPassword/DiscardRecoverySession types. Unlike requestPasswordReset above,
+// supabase.auth.verifyOtp({ type: "recovery" }) DOES establish a real (temporary) session as a
+// side effect of a successful call — and app/_layout.tsx's KycGate re-evaluates and redirects
+// the instant ANY session becomes visible on the shared `supabase` singleton (see spec.md
+// Clarifications for the full trace of why). So this function builds and returns a SECOND,
+// throwaway `createClient(...)` instance on every call — `persistSession: false,
+// autoRefreshToken: false` — and binds all three returned functions to that instance only. This
+// throwaway client is never assigned to the module-level `supabase` export above, and nothing in
+// this function ever reads from or writes to that export. Each call produces its own fresh
+// instance (LoginScreen.tsx, T013, creates exactly one per "Forgot password?" press via
+// `useState(() => createPasswordRecoverySession())`), so state can't leak across separate
+// recovery attempts either.
+export function createPasswordRecoverySession(): {
+  verifyCode: VerifyRecoveryCode;
+  updatePassword: UpdateRecoveryPassword;
+  discard: DiscardRecoverySession;
+} {
+  const recoveryClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  const verifyCode: VerifyRecoveryCode = async (email, code) => {
+    try {
+      const { error } = await recoveryClient.auth.verifyOtp({
+        email,
+        token: code,
+        type: "recovery",
+      });
+      return { error: error?.message ?? null };
+    } catch {
+      return { error: NETWORK_SIGN_IN_ERROR_MESSAGE };
+    }
+  };
+
+  const updatePassword: UpdateRecoveryPassword = async (newPassword) => {
+    try {
+      const { error } = await recoveryClient.auth.updateUser({ password: newPassword });
+      return { error: error?.message ?? null };
+    } catch {
+      return { error: NETWORK_SIGN_IN_ERROR_MESSAGE };
+    }
+  };
+
+  // DiscardRecoverySession returns Promise<void> (src/domain/passwordReset.ts) — nothing to
+  // report on either outcome, this is best-effort cleanup of a throwaway client instance, not an
+  // operation a caller branches on. Still must not throw, per the same MUST-NEVER-THROW
+  // convention as every other function in this file.
+  const discard: DiscardRecoverySession = async () => {
+    try {
+      await recoveryClient.auth.signOut();
+    } catch {
+      // Intentionally swallowed — see comment above.
+    }
+  };
+
+  return { verifyCode, updatePassword, discard };
 }
