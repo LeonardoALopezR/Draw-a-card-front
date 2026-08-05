@@ -7,8 +7,12 @@ import {
   businessProfileFormSchema,
   businessRegistrationSchema,
   normalizeUsernameForComparison,
+  passwordSchema,
   personalRegistrationSchema,
   profileFormSchema,
+  requestPasswordResetSchema,
+  resetPasswordWithCodeSchema,
+  signInSchema,
   usernameSchema,
   verificationCodeSchema,
 } from "./schemas";
@@ -95,6 +99,147 @@ describe("personalRegistrationSchema / businessRegistrationSchema", () => {
     const parsed = businessRegistrationSchema.parse(validInput);
     expect(parsed).not.toHaveProperty("commercialName");
     expect(parsed).not.toHaveProperty("rfc");
+  });
+
+  // 005-login FR-001 regression: personalRegistrationSchema.password was refactored to
+  // delegate to the new shared passwordSchema (schemas.ts) instead of its own inline
+  // z.string().min(8, ...) rule — this asserts the refactor is a byte-for-byte no-op: the
+  // exact same threshold and the exact same message as before the refactor.
+  it("password validation is unchanged by the passwordSchema refactor (same threshold, same message)", () => {
+    const tooShort = personalRegistrationSchema.safeParse({ ...validInput, password: "short1" });
+    expect(tooShort.success).toBe(false);
+    if (!tooShort.success) {
+      const passwordIssue = tooShort.error.issues.find((issue) => issue.path[0] === "password");
+      expect(passwordIssue?.message).toBe("Password must be at least 8 characters");
+    }
+
+    const exactlyEight = personalRegistrationSchema.safeParse({
+      ...validInput,
+      password: "12345678",
+    });
+    expect(exactlyEight.success).toBe(true);
+  });
+});
+
+describe("passwordSchema", () => {
+  // 005-login FR-001: the factored-out rule itself — same threshold/message as
+  // personalRegistrationSchema.password used to enforce inline.
+  it("rejects a password shorter than 8 characters with the shared message", () => {
+    const result = passwordSchema.safeParse("short1");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe("Password must be at least 8 characters");
+    }
+  });
+
+  it("accepts a password of exactly 8 characters", () => {
+    expect(passwordSchema.safeParse("12345678").success).toBe(true);
+  });
+});
+
+describe("signInSchema", () => {
+  const validInput = { email: "ana@example.com", password: "any-password-at-all" };
+
+  // 005-login FR-001: happy path — a well-formed email and a non-empty password, regardless of
+  // whether it would satisfy passwordSchema's 8-character rule (login does not re-enforce
+  // strength, only presence).
+  it("accepts a valid sign-in payload", () => {
+    expect(signInSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("accepts a password shorter than passwordSchema's 8-character minimum (no strength re-check on sign-in)", () => {
+    expect(signInSchema.safeParse({ ...validInput, password: "a" }).success).toBe(true);
+  });
+
+  it("rejects a missing email", () => {
+    const { email: _email, ...withoutEmail } = validInput;
+    expect(signInSchema.safeParse(withoutEmail).success).toBe(false);
+  });
+
+  it("rejects an invalid email with a custom message", () => {
+    const result = signInSchema.safeParse({ ...validInput, email: "not-an-email" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const emailIssue = result.error.issues.find((issue) => issue.path[0] === "email");
+      expect(emailIssue?.message).toBe("Enter a valid email address");
+    }
+  });
+
+  it("rejects an empty password with a custom message", () => {
+    const result = signInSchema.safeParse({ ...validInput, password: "" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const passwordIssue = result.error.issues.find((issue) => issue.path[0] === "password");
+      expect(passwordIssue?.message).toBe("Enter your password");
+    }
+  });
+});
+
+describe("requestPasswordResetSchema", () => {
+  // 005-login FR-007: happy path — email only.
+  it("accepts a well-formed email", () => {
+    expect(requestPasswordResetSchema.safeParse({ email: "ana@example.com" }).success).toBe(true);
+  });
+
+  it("rejects a missing email", () => {
+    expect(requestPasswordResetSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects an invalid email with a custom message", () => {
+    const result = requestPasswordResetSchema.safeParse({ email: "not-an-email" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const emailIssue = result.error.issues.find((issue) => issue.path[0] === "email");
+      expect(emailIssue?.message).toBe("Enter a valid email address");
+    }
+  });
+});
+
+describe("resetPasswordWithCodeSchema", () => {
+  const validInput = {
+    email: "ana@example.com",
+    code: "123456",
+    password: "supersecret1",
+  };
+
+  // 005-login FR-008: happy path — well-formed email, a 6-digit code, and a password meeting
+  // passwordSchema's 8-character minimum.
+  it("accepts a valid reset-with-code payload", () => {
+    expect(resetPasswordWithCodeSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("rejects an invalid email", () => {
+    const result = resetPasswordWithCodeSchema.safeParse({ ...validInput, email: "not-an-email" });
+    expect(result.success).toBe(false);
+  });
+
+  // 005-login spec.md Assumptions: the code must be exactly PASSWORD_RESET_CODE_LENGTH (6)
+  // digits — non-digit characters and the wrong length are both rejected, mirroring
+  // verificationCodeSchema's regex-based approach above.
+  it("rejects a code containing non-digit characters", () => {
+    const result = resetPasswordWithCodeSchema.safeParse({ ...validInput, code: "12a456" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const codeIssue = result.error.issues.find((issue) => issue.path[0] === "code");
+      expect(codeIssue?.message).toBe("Enter the 6-digit code");
+    }
+  });
+
+  it("rejects a code with the wrong length", () => {
+    expect(resetPasswordWithCodeSchema.safeParse({ ...validInput, code: "12345" }).success).toBe(
+      false
+    );
+  });
+
+  // 005-login FR-008: reuses the shared passwordSchema (T001) — same 8-character minimum as
+  // registration, not a separately-maintained rule.
+  it("rejects a password shorter than 8 characters with passwordSchema's shared message", () => {
+    const result = resetPasswordWithCodeSchema.safeParse({ ...validInput, password: "short1" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const passwordIssue = result.error.issues.find((issue) => issue.path[0] === "password");
+      expect(passwordIssue?.message).toBe("Password must be at least 8 characters");
+    }
   });
 });
 

@@ -42,6 +42,14 @@ export function normalizeUsernameForComparison(username: string): string {
   return username.normalize("NFKD").replace(COMBINING_DIACRITICAL_MARKS, "").toLowerCase();
 }
 
+// 005-login FR-001: the minimum-length password rule, factored out of
+// personalRegistrationSchema.password below so both registration and the forgot-password
+// "set a new password" step (specs/005-login) share one definition rather than two
+// independently-maintained 8-character rules silently drifting apart later (plan.md's "Shared
+// schemas" Research Decision). Byte-for-byte identical to the rule this replaces — same
+// message, same threshold.
+export const passwordSchema = z.string().min(8, "Password must be at least 8 characters");
+
 // FR-001, FR-002, FR-003, FR-005: POST /identity/register and POST /identity/register/business
 // share this identical shape (backend spec Clarifications, Session 2026-08-03,
 // mid-implementation correction) — account type is determined by which endpoint is called, not
@@ -52,7 +60,7 @@ export const personalRegistrationSchema = z.object({
   // (not left as the default) to match the "Enter a valid X" phrasing already used by `phone`
   // below, per docs/verification.md's user-facing-copy bar (no raw Zod default messages).
   email: z.string().email("Enter a valid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: passwordSchema,
   phone: z.string().min(1, "Enter a valid phone number"),
   username: usernameSchema,
 });
@@ -149,3 +157,45 @@ export const businessProfileFormSchema = profileFormSchema.extend({
   fiscalAddress: z.string().min(1, "Fiscal address is required"),
 });
 export type BusinessProfileFormInput = z.infer<typeof businessProfileFormSchema>;
+
+// 005-login FR-001: POST-free — sign-in goes through the Supabase Auth SDK directly
+// (src/lib/supabase-client.ts's signInWithPassword, reused unchanged from
+// 001-registration-kyc), not a backend endpoint, so there is no backend contract to mirror
+// here the way personalRegistrationSchema mirrors the backend's registerCredentialsSchema.
+// Deliberately does NOT reuse passwordSchema for `password`: a sign-in form must not
+// re-enforce a strength rule against a password that may predate any given rule change — only
+// presence is checked client-side, Supabase is the sole authority on whether it's correct
+// (plan.md's "Sign-in mechanism" Research Decision).
+export const signInSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(1, "Enter your password"),
+});
+export type SignInInput = z.infer<typeof signInSchema>;
+
+// 005-login spec.md Assumptions: the emailed reset code's exact length is ASSUMED to be 6
+// digits (Supabase Auth's documented default for email OTPs), distinct from
+// verificationCodeSchema's existing 5-digit SMS phone-verification code above. A one-constant
+// adjustment (not a structural risk) if the live Supabase project's configured OTP length turns
+// out to differ — CodeInput (src/features/identity/CodeInput.tsx) already accepts a
+// configurable length prop.
+export const PASSWORD_RESET_CODE_LENGTH = 6;
+
+// 005-login FR-007: "request a reset code" step — email only, same validation rule as
+// signInSchema's email field (a plain well-formedness check; Supabase's own SDK call is the
+// anti-enumeration boundary, this schema does not attempt to duplicate that).
+export const requestPasswordResetSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+});
+export type RequestResetInput = z.infer<typeof requestPasswordResetSchema>;
+
+// 005-login FR-008: "enter code + new password" step — email (carried forward from the request
+// step, editable), the emailed code (PASSWORD_RESET_CODE_LENGTH digits, mirroring
+// verificationCodeSchema's regex-not-just-length-check approach above), and the new password
+// (reuses the shared passwordSchema, T001 — same minimum-length rule as registration, no
+// separate/duplicated rule).
+export const resetPasswordWithCodeSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+  code: z.string().regex(new RegExp(`^\\d{${PASSWORD_RESET_CODE_LENGTH}}$`), "Enter the 6-digit code"),
+  password: passwordSchema,
+});
+export type ResetWithCodeInput = z.infer<typeof resetPasswordWithCodeSchema>;

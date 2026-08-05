@@ -10,7 +10,7 @@ import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { currentUserQueryKey, useKycGate } from "./useKycGate";
+import { currentUserQueryKey, KYC_ROUTE_TARGETS, useKycGate } from "./useKycGate";
 
 // T033 (found by code-reviewer's second review, Finding 1 BLOCKING): @/lib/api is intentionally
 // NOT mocked in this file — its real setCurrentUserId/currentUserId mechanism is exactly what
@@ -89,6 +89,16 @@ beforeEach(() => {
   // import comment) — reset it so the clear-on-sign-out test below can't leak into, or be
   // affected by, any other test in this file.
   setCurrentUserId(undefined);
+});
+
+// FR-002 (005-login): a signed-out visitor's default landing route is "/login", not the old
+// "/register" — regression coverage for the literal URL string itself (T006 changed
+// KYC_ROUTE_TARGETS.unauthenticated but, by design, left this file's other tests, which only
+// assert the abstract KycRoute value "unauthenticated", unable to catch a regression here).
+describe("KYC_ROUTE_TARGETS", () => {
+  it("maps the unauthenticated route to /login (FR-002)", () => {
+    expect(KYC_ROUTE_TARGETS.unauthenticated).toBe("/login");
+  });
 });
 
 describe("useKycGate", () => {
