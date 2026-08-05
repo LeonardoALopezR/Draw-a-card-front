@@ -94,13 +94,19 @@ Requires the backend running first (`docker compose up` in the `Draw-a-card` bac
 Run everything in one shot:
 
 ```bash
-./init.sh   # install, type-check, expo-doctor, tests (once configured), web build check
+./init.sh   # install, type-check, expo-doctor, native dep alignment, tests,
+            # and a bundle export per target (web + iOS + Android)
 ```
 
 Requires Node >= 20 (`nvm use`, pinned in `.nvmrc`). Safe to re-run — every stage is
 idempotent — and prints a pass/fail summary at the end (also what `sdd-orchestrator` runs
 once per session before delegating any work). Flags: `--skip-doctor`, `--skip-tests`,
-`--skip-build`.
+`--skip-build`, `--skip-native` (skips the iOS/Android exports; web still runs).
+
+The iOS and Android exports add roughly a minute over web alone, and they earn it: Metro
+resolves a different module graph per platform, so a green web build says nothing about
+whether native even bundles. Use `--skip-native` for a fast inner loop, never before marking
+a feature `done`.
 
 Or step through it manually:
 

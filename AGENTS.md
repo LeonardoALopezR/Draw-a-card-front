@@ -31,13 +31,14 @@
 | `docs/verification.md` | What counts as tested, verification levels, test-tooling status, anti-patterns | Before declaring a task `done` |
 | `CHECKPOINTS.md` | Repo-hygiene / harness-health self-audit (distinct from code review) | `code-reviewer` walks this before approving |
 | `.claude/skills/speckit-*/SKILL.md` | The actual SDD process definition (specify → clarify → plan → tasks → implement → analyze → checklist) | Before writing or reading a spec |
+| `.claude/skills/feature-branch/SKILL.md` | Sync `main` and cut/resume the feature's own branch (one branch per feature, named after the feature id) | At `pending` → `in_progress`, before the first `task-implementer` call, and when resuming a feature in a fresh session |
 | `.claude/agents/` | Subagent definitions: `sdd-orchestrator`, `spec-writer`, `task-implementer`, `code-reviewer` | If you're orchestrating work across a feature |
 | `.claude/settings.json` | Hooks that enforce verification automatically (type-check on every edit, `init.sh` on session stop) — not optional, the harness runs these regardless of what an agent decides | If you're wondering why a check ran without being asked |
 | `app/` | expo-router screens (routing layer) | To implement a route/screen |
 | `src/domain/` | Portable business logic — zero React Native imports (api-client, types, schemas) | For logic that isn't UI |
 | `src/lib/` | Expo-specific adapter layer (Supabase client, configured API instance) | For platform wiring |
 | `src/features/` | UI screens/components by domain, mirroring the backend's modules | For UI implementation |
-| `init.sh` | One-shot local env setup: install, type-check, expo-doctor, tests, web build check | To verify your environment or before declaring a task done |
+| `init.sh` | One-shot local env setup: install, type-check, expo-doctor, native dependency alignment, tests, and bundle export checks for **all three** targets (web, iOS, Android) | To verify your environment or before declaring a task done |
 
 No separate `docs/architecture.md` or `docs/specs.md` — the constitution already covers
 architecture/tech stack, and the `speckit-*` skills already are the process definition.
@@ -88,8 +89,10 @@ pending → [spec-writer] → spec_ready → ⏸ HUMAN → in_progress → [task
    has no open `[NEEDS CLARIFICATION]` markers — or to `blocked` if it needs clarification
    first, returning `blocked -> specs/<feature>/spec.md` for `sdd-orchestrator` to relay.
 3. **Pause.** The human reads `specs/<feature>/` and approves, or asks for changes.
-4. Once approved, `sdd-orchestrator` flips status to `in_progress` and starts delegating tasks
-   to `task-implementer`.
+4. Once approved, `sdd-orchestrator` flips status to `in_progress`, invokes the
+   `feature-branch` skill to sync `main` and cut the feature's branch (named exactly after the
+   feature id — one branch per feature, one PR back to `main`), and only then starts delegating
+   tasks to `task-implementer`.
 5. `task-implementer` executes `tasks.md` one task (or small independent batch) at a time,
    marking each `[X]` as it completes it, writing its report to
    `progress/impl_<feature>.md`.

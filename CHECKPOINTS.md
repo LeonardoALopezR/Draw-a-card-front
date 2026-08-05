@@ -40,7 +40,10 @@
       tooling exists for that feature area (see `docs/verification.md`).
 - [ ] New/changed screens have component tests using React Native Testing Library, asserting
       on rendered output — not implementation details.
-- [ ] `./init.sh`'s build check (`expo export --platform web`) passes.
+- [ ] `./init.sh`'s build checks pass for **all three** targets (`expo export` for web, iOS,
+      and Android — each is its own stage), and its "Native dependency alignment" stage is not
+      FAILing (an undeclared `expo-router` peer means the app will crash at runtime on native
+      even though every bundle and test is green).
 
 ## C5 — The session closed well
 
