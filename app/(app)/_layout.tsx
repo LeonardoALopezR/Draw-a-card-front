@@ -5,6 +5,7 @@ import { NAV_DESTINATIONS, type NavDestinationKey } from "@/domain/navigation";
 import { navCopy } from "@/domain/i18n/copy/nav";
 import { useTranslation } from "@/features/i18n/LocaleContext";
 import { ShellHeader } from "@/features/navigation/ShellHeader";
+import { colors } from "@/theme";
 
 // T009 (specs/008-scan-experience): the native (iOS/Android) shell — expo-router's <Tabs>,
 // one <Tabs.Screen> per NAV_DESTINATIONS entry (src/domain/navigation.ts, T001), which stays
@@ -48,7 +49,28 @@ export default function AppTabsLayout() {
   };
 
   return (
-    <Tabs screenOptions={{ headerShown: true, header: () => <ShellHeader /> }}>
+    <Tabs
+      screenOptions={{
+        headerShown: true,
+        header: () => <ShellHeader />,
+        // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): no explicit tint colors
+        // meant iOS fell back to its system-default blue for the active tab — disagreeing with the
+        // mockups (active destination in brand lime) and with the web nav's dark-on-light links.
+        // `colors.brand.primary` (the lime) was tried first and rejected: against this tab bar's
+        // light default background it measures ~1.29:1 with `contrastRatio` (src/theme/contrast.ts)
+        // against `colors.bg.surface`, far below the WCAG AA 4.5:1 floor (Constitution VII) — using
+        // it here would trade an invisible-on-black bug (see Viewfinder.tsx's foundHeading fix) for
+        // an invisible-on-white one. `colors.text.link` is the token this repo already uses
+        // everywhere else a mockup calls for an actionable/"brand accent" green (e.g.
+        // FoundCardPanel.tsx's "Cambiar" link) and clears AA against both plausible tab-bar
+        // background tokens: ~5.28:1 against `bg.surface` (iOS's near-white default) and ~4.51:1
+        // against `bg.page` (a plausible Android fallback) — see
+        // src/features/navigation/AppNativeLayout.test.tsx's regression guard, which computes both
+        // ratios via the same `contrastRatio` helper rather than eyeballing them.
+        tabBarActiveTintColor: colors.text.link,
+        tabBarInactiveTintColor: colors.text.secondary,
+      }}
+    >
       {NAV_DESTINATIONS.map((destination) => (
         <Tabs.Screen
           key={destination.key}

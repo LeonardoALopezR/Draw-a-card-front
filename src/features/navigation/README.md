@@ -29,7 +29,17 @@ What lives here:
 - **`WebSidebarNav.tsx`** / **`WebBottomBarNav.tsx`** — the two web nav layouts (sidebar above
   the `768px` breakpoint, bottom bar below it — `src/domain/navigation.ts`'s
   `resolveWebNavLayout`), each rendering all five destinations as real keyboard-reachable
-  `<Link>`s with localized labels (`useTranslation(navCopy)` — never a hardcoded string).
+  `<Link>`s with localized labels (`useTranslation(navCopy)` — never a hardcoded string). Each
+  `<Link>`'s own style sets `display: "flex"` (required — `react-native-web` renders `<Link>` as
+  an inline `<a>` by default, which silently ignores flex-dependent properties including the
+  44x44 tap target) and wraps its icon + label in a nested `<View>` that owns the actual
+  `gap`/`alignItems`/`flexDirection` layout, rather than applying those directly to the `<Link>` —
+  a real `View` is guaranteed to be a flex container on every platform without needing that
+  `display` override, so the icon/label spacing can't silently regress if a future edit touches
+  the `<Link>`'s own style. This fixes a layout bug (icon and label rendering flush against each
+  other with zero separation) that shipped in commit `39c3f02` and was caught only by a live
+  browser render, not by either component's test suite — see
+  `progress/impl_008-scan-experience.md`'s dedicated fix entry.
 - **`HomeScreen.tsx`** — Inicio's own content (a `BrandMark` + title + tagline +
   `ScanEntryCard`'s repurposed quick-action shortcut to Escanear), not the shell chrome itself.
 

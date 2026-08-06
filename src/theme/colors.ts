@@ -22,6 +22,16 @@
 // method exactly) clears 4.5:1 against every background this feature's error text actually
 // renders on (bg.page 5.52:1, bg.surface 6.47:1, bg.surfaceMuted 6.08:1 — see
 // contrast.test.ts).
+//
+// gradients (follow-up to specs/008-scan-experience, human-requested, 2026-08-06): the sample
+// card pool's thumbnails (src/domain/scanResults.ts's `thumbnailGradient`, rendered by
+// src/features/scanner/CardThumbnail.tsx) read distinct two-stop gradients from here rather than
+// a raw hex pair at the call site, mirroring every other token in this file. Purely decorative
+// (never text-on-background), so these are not subject to contrast.test.ts's 4.5:1 WCAG pairing
+// checks the way text/background tokens above are — three visually distinct hues per the
+// human's explicit request (purple/warm red-orange/dark teal), each a standard two-stop
+// Tailwind-shade ramp of the same hue (light stop -> dark stop) for a believable gradient rather
+// than two arbitrary colors.
 export const colors = {
   brand: {
     primary: "#C7F24C",
@@ -52,5 +62,17 @@ export const colors = {
   accent: {
     priceGreen: "#1C844A",
     pillBg: "#E4F5E7",
+  },
+  // Two-stop decorative gradients for the sample-card pool's thumbnails
+  // (src/domain/scanResults.ts's `thumbnailGradient`, rendered by
+  // src/features/scanner/CardThumbnail.tsx) — never text-on-background, so not subject to
+  // contrast.test.ts's 4.5:1 WCAG pairing checks the way the tokens above are. Three visually
+  // distinct hues per the human's explicit request (purple / warm red-orange / dark teal), each
+  // a standard same-hue light-stop -> dark-stop Tailwind ramp for a believable gradient rather
+  // than two arbitrary colors.
+  gradients: {
+    cardPurple: ["#A78BFA", "#4C1D95"], // Dragón Eterno — violet-400 -> violet-900
+    cardEmber: ["#FB923C", "#9A3412"], // Fénix de Tormenta — orange-400 -> orange-800
+    cardTeal: ["#2DD4BF", "#134E4A"], // Serpiente del Vacío — teal-400 -> teal-900
   },
 } as const;

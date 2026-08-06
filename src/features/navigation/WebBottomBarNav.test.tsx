@@ -6,8 +6,8 @@
 // (specs/008-scan-experience). Mocks expo-router's <Link>/<Slot> the same way
 // WebSidebarNav.test.tsx does, per docs/verification.md Level 2.
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react-native";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { fireEvent, render, screen, within } from "@testing-library/react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 jest.mock("expo-router", () => {
   const { Text } = require("react-native");
@@ -121,6 +121,36 @@ describe("WebBottomBarNav", () => {
       const style = StyleSheet.flatten(link.props.style);
       expect(style.minWidth).toBeGreaterThanOrEqual(44);
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
+    });
+  });
+
+  // Regression test for the layout bug shipped in commit 39c3f02 and caught only by a live
+  // browser render (docs/verification.md Level 3), never by this file's own test suite — see
+  // progress/impl_008-scan-experience.md's dedicated fix entry. react-native-web renders <Link>
+  // as an inline <a>; flex properties (gap/alignItems/justifyContent) applied directly to it are
+  // silently ignored by the browser even though `StyleSheet.flatten(link.props.style)` genuinely
+  // reports them — the T033 test above ("minimum 44x44 tap target") is exactly that kind of
+  // style-object-only assertion and passed throughout the bug's lifetime. Asserting *structure*
+  // instead — that the icon and label are wrapped in a real View, one level inside the Link,
+  // rather than being the Link's direct children — is what actually catches this, since a View is
+  // guaranteed to be a flex container on every platform (unlike Link/Text, whose web default is
+  // `display: inline`).
+  it("wraps each link's icon and label in a real View container, not as the Link's direct children", () => {
+    render(<WebBottomBarNav />);
+
+    NAV_DESTINATIONS.forEach((destination) => {
+      const link = screen.getByRole("link", { name: SPANISH_LABEL_BY_KEY[destination.key] });
+
+      // The mocked <Link> above forwards `children` verbatim, so the Link's own children must be
+      // exactly one element — the wrapping View — never the label Text directly.
+      expect(link.children).toHaveLength(1);
+      const wrapperViews = link.findAllByType(View);
+      expect(wrapperViews.length).toBeGreaterThan(0);
+
+      // The label text lives inside that wrapper, not merely somewhere under the Link.
+      expect(
+        within(wrapperViews[0]).getByText(SPANISH_LABEL_BY_KEY[destination.key])
+      ).toBeTruthy();
     });
   });
 

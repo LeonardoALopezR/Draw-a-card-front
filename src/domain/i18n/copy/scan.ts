@@ -59,6 +59,12 @@ const es = {
   marketPriceLabel: "Precio de mercado",
   acceptButton: "Aceptar",
   acceptedConfirmation: "Carta agregada",
+  // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator, see
+  // progress/impl_008-scan-experience.md): the mockups show this label above the condition-chip
+  // row, but it was never added to T006's key list nor T014's description — the row rendered with
+  // no heading at all. Same `fieldLabel` treatment (typography.label.field) as "Cantidad" and
+  // "Precio de mercado" above, not a new style.
+  conditionLabel: "Condición actual",
 
   // --- Condition-chip labels, one per ConditionOption (src/domain/scanResults.ts, T006) ---
   conditionNearMint: "Casi Nuevo",
@@ -92,6 +98,7 @@ const en: Record<keyof typeof es, string> = {
   marketPriceLabel: "Market price",
   acceptButton: "Accept",
   acceptedConfirmation: "Card added",
+  conditionLabel: "Current condition",
 
   conditionNearMint: "Near Mint",
   conditionExcellent: "Excellent",

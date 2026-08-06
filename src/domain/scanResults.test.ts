@@ -2,6 +2,8 @@
 // Entities) — direct unit tests of the found-card pure transition functions, per
 // docs/verification.md Level 1 ("business logic tested directly in src/domain, not only
 // indirectly through a component render").
+import { colors } from "@/theme/colors";
+
 import {
   advanceToNextCard,
   decrementQuantity,
@@ -29,6 +31,26 @@ describe("SAMPLE_CARDS (FR-010)", () => {
       expect(card.defaultCondition).toBe("nearMint");
       expect(card.defaultGraded).toBe(true);
     }
+  });
+
+  // Human-requested follow-up (2026-08-06): each card's thumbnail is a distinct gradient, not a
+  // flat color, and every stop must reference an existing src/theme token — never a raw hex
+  // literal at this call site.
+  it("gives each card a two-stop thumbnailGradient sourced from src/theme/colors.ts's gradients tokens", () => {
+    expect(SAMPLE_CARDS[0].thumbnailGradient).toBe(colors.gradients.cardPurple);
+    expect(SAMPLE_CARDS[1].thumbnailGradient).toBe(colors.gradients.cardEmber);
+    expect(SAMPLE_CARDS[2].thumbnailGradient).toBe(colors.gradients.cardTeal);
+
+    for (const card of SAMPLE_CARDS) {
+      expect(card.thumbnailGradient).toHaveLength(2);
+      expect(card.thumbnailGradient[0]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(card.thumbnailGradient[1]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it("gives each card a visually distinct gradient (no two cards share a thumbnailGradient)", () => {
+    const serialized = SAMPLE_CARDS.map((card) => card.thumbnailGradient.join(","));
+    expect(new Set(serialized).size).toBe(SAMPLE_CARDS.length);
   });
 });
 

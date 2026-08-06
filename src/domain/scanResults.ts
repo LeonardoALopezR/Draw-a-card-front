@@ -4,7 +4,16 @@
 // truth both `src/features/scanner/useScanSimulation.ts` (mobile/web trigger) and
 // `RecentScansList.tsx` (the "ESCANEOS RECIENTES" list) read from — see plan.md's "Sample-card
 // pool" Research Decision. Only `@/theme/colors` (itself zero-RN-import) is imported, so
-// `thumbnailColorToken` below always references a real theme token, never a raw hex literal.
+// `thumbnailGradient` below always references a real theme token pair, never a raw hex literal.
+//
+// thumbnailGradient (follow-up to specs/008-scan-experience, human-requested, 2026-08-06):
+// originally a single flat `thumbnailColorToken: string`, per the spec's Key Entities section —
+// rendered as a flat swatch, not the gradient the supplied mockups actually show. Replaced with
+// an ordered two-color-stop tuple read from `colors.gradients` (still plain data, no
+// React/React Native import here — the gradient *rendering* lives in
+// `src/features/scanner/CardThumbnail.tsx`, an `expo-linear-gradient` wrapper, since that
+// package is already an installed, already-used dependency — see that file's own comment for the
+// "why no new dependency" reasoning).
 import { colors } from "@/theme/colors";
 
 export type ConditionOption = "nearMint" | "excellent" | "veryGood" | "good" | "fair";
@@ -25,7 +34,9 @@ export interface SampleCard {
   readonly code: string;
   readonly grade: string;
   readonly priceLabel: string;
-  readonly thumbnailColorToken: string;
+  /** Ordered light-stop -> dark-stop color pair from `src/theme/colors.ts`'s `gradients`
+   * namespace — never a raw hex literal at this call site or any consumer's. */
+  readonly thumbnailGradient: readonly [string, string];
   readonly defaultCondition: ConditionOption;
   readonly defaultGraded: boolean;
 }
@@ -43,7 +54,7 @@ export const SAMPLE_CARDS: readonly SampleCard[] = [
     code: "GEN-001",
     grade: "PSA 10",
     priceLabel: "$45,000",
-    thumbnailColorToken: colors.brand.primary,
+    thumbnailGradient: colors.gradients.cardPurple,
     defaultCondition: "nearMint",
     defaultGraded: true,
   },
@@ -54,7 +65,7 @@ export const SAMPLE_CARDS: readonly SampleCard[] = [
     code: "ARC-047",
     grade: "BGS 9.5",
     priceLabel: "$12,500",
-    thumbnailColorToken: colors.accent.priceGreen,
+    thumbnailGradient: colors.gradients.cardEmber,
     defaultCondition: "nearMint",
     defaultGraded: true,
   },
@@ -65,7 +76,7 @@ export const SAMPLE_CARDS: readonly SampleCard[] = [
     code: "GEN-022",
     grade: "PSA 9",
     priceLabel: "$8,900",
-    thumbnailColorToken: colors.text.link,
+    thumbnailGradient: colors.gradients.cardTeal,
     defaultCondition: "nearMint",
     defaultGraded: true,
   },

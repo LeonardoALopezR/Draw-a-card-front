@@ -1,10 +1,19 @@
-// Covers FR-011 (four icon controls, top-to-bottom order, real accessibility labels, minimum
+// Covers FR-011 (four icon controls, stated order, real accessibility labels, minimum
 // 44x44 tap target, both locales), FR-012 (the language control renders a Mexico/USA flag-style
 // visual, not a text label), SC-004 (minimum tap target + non-empty accessibility label), SC-005
 // (never a silent no-op — activating each control shows visible "not yet available" feedback),
 // and SC-006 (every string renders correctly in both Spanish and English) per tasks.md T007
 // (specs/008-scan-experience). docs/verification.md Level 2 — asserts rendered output/behavior,
 // not implementation details.
+//
+// Layout-fix regression coverage (2026-08-06, found by a live browser render — see
+// TopRightControls.tsx's top-of-file comment): the "renders horizontally as a compact row"/
+// "feedback bubble is out of flow" tests below assert real structural properties that actually
+// drive RN's Yoga layout on every platform — unlike the WebSidebarNav/WebBottomBarNav bug fixed
+// in commit `39c3f02`, where a `flexDirection` style was silently ignored because it sat on a
+// web-`inline` element, `View` (used throughout this file) is a real flex container by default
+// on every target, so `flexDirection`/`position` assertions here are a genuine proxy for what a
+// browser will render, not just "the style key exists."
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
@@ -14,7 +23,9 @@ import { LocaleProvider, useLocale } from "@/features/i18n/LocaleContext";
 
 import { TopRightControls } from "./TopRightControls";
 
-// spec.md FR-011's exact stated order: language, currency, notifications, messages.
+// spec.md FR-011's exact stated order: language, currency, notifications, messages — rendered
+// left to right now that the controls lay out as a horizontal row (2026-08-06 layout fix)
+// rather than top to bottom as a column.
 const EXPECTED_ORDER_ES = [
   navCopy.es.languageAccessibilityLabel,
   navCopy.es.currencyAccessibilityLabel,
@@ -45,16 +56,33 @@ function LocaleSwitchTrigger() {
 }
 
 describe("TopRightControls", () => {
-  // FR-011: exactly four controls render, top-to-bottom, in the stated order, defaulting to
+  // FR-011: exactly four controls render, left-to-right, in the stated order, defaulting to
   // Spanish (DEFAULT_LOCALE) with no <LocaleProvider> wrapping the render — the same bare-render-
   // defaults-to-es convention every other i18n'd component test in this repo uses.
-  it("renders exactly four controls, top-to-bottom, in the stated order", () => {
+  it("renders exactly four controls, left-to-right, in the stated order", () => {
     render(<TopRightControls />);
 
     const buttons = screen.getAllByRole("button");
 
     expect(buttons).toHaveLength(4);
     expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual(EXPECTED_ORDER_ES);
+  });
+
+  // Layout fix (2026-08-06): the four controls must lay out as a horizontal row, not 004's
+  // original vertical column — a column reserved the whole stack's height as empty space above
+  // every one of the shell's five destinations once ShellHeader (T008) made this shell-wide
+  // chrome (~285px on desktop, ~450px of an 812px mobile viewport, measured in a real browser
+  // before this fix). `View` is a real flex container on every platform by default (unlike the
+  // `Link`/`Text` `display: inline` trap fixed for WebSidebarNav/WebBottomBarNav in `39c3f02`),
+  // so asserting `flexDirection` here is a genuine proxy for real rendered layout, not merely a
+  // style-object round-trip.
+  it("lays the four controls out horizontally as a row, not stacked as a column", () => {
+    render(<TopRightControls />);
+
+    const stack = screen.getByTestId("top-right-controls");
+    const style = StyleSheet.flatten(stack.props.style);
+
+    expect(style.flexDirection).toBe("row");
   });
 
   // This task's core requirement: icon-only rendering — none of 004's old visible text labels
@@ -166,6 +194,31 @@ describe("TopRightControls", () => {
       fireEvent.press(control);
       expect(screen.queryByText(navCopy.es.notYetAvailableFeedback)).toBeNull();
     });
+  });
+
+  // Layout fix (2026-08-06): in the old column layout, feedback text sat in-flow below its
+  // control with nothing beside it to disturb. In the new row layout, in-flow feedback would
+  // widen that control's flex item and visibly shove the other three controls sideways every
+  // time it toggled on. Regression-guards the fix (`position: "absolute"` takes the bubble out
+  // of flow) two ways: the style itself, and the real-world consequence — the other three
+  // controls' order, count, and accessible names are unchanged before and after the bubble
+  // appears.
+  it("shows feedback as an out-of-flow bubble that does not shift the other three controls", () => {
+    render(<TopRightControls />);
+
+    const beforeOrder = screen
+      .getAllByRole("button")
+      .map((button) => button.props.accessibilityLabel);
+
+    fireEvent.press(screen.getByRole("button", { name: EXPECTED_ORDER_ES[0] }));
+
+    const feedbackBubble = screen.getByText(navCopy.es.notYetAvailableFeedback);
+    expect(StyleSheet.flatten(feedbackBubble.props.style).position).toBe("absolute");
+
+    const afterOrder = screen
+      .getAllByRole("button")
+      .map((button) => button.props.accessibilityLabel);
+    expect(afterOrder).toEqual(beforeOrder);
   });
 
   // SC-006: switching the locale context to "en" (the exact seam 007-localization's future

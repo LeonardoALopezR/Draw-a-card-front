@@ -29,7 +29,8 @@
 // documented for `_layout.*` files in docs/conventions.md's "Tests" section (same reasoning as
 // AppWebLayout.test.tsx, colocated here for the same rationale).
 import ShallowRenderer from "react-test-renderer/shallow";
-import type { ReactElement } from "react";
+
+import { colors, contrastRatio } from "@/theme";
 
 import AppTabsLayout from "../../../app/(app)/_layout";
 
@@ -40,12 +41,23 @@ interface TabsScreenLike {
   };
 }
 
-function renderScreens(): TabsScreenLike[] {
-  const renderer = new ShallowRenderer();
-  const output = renderer.render(<AppTabsLayout />) as ReactElement<{
+interface TabsLike {
+  props: {
+    screenOptions: {
+      tabBarActiveTintColor?: string;
+      tabBarInactiveTintColor?: string;
+    };
     children: TabsScreenLike[];
-  }>;
-  return output.props.children;
+  };
+}
+
+function renderTabs(): TabsLike {
+  const renderer = new ShallowRenderer();
+  return renderer.render(<AppTabsLayout />) as unknown as TabsLike;
+}
+
+function renderScreens(): TabsScreenLike[] {
+  return renderTabs().props.children;
 }
 
 describe("app/(app)/_layout.tsx — native <Tabs> per-screen options (T020a, AS4)", () => {
@@ -62,5 +74,30 @@ describe("app/(app)/_layout.tsx — native <Tabs> per-screen options (T020a, AS4
     expect(byName.cartera.props.options.unmountOnBlur).toBeUndefined();
     expect(byName.trades.props.options.unmountOnBlur).toBeUndefined();
     expect(byName.perfil.props.options.unmountOnBlur).toBeUndefined();
+  });
+});
+
+// Defect fix (specs/008-scan-experience, 2026-08-06, found on a real iPhone 17 Pro simulator,
+// FR-001): no `tabBarActiveTintColor`/`tabBarInactiveTintColor` were set at all, so iOS fell back
+// to its system-default blue for the active tab instead of a brand token — 491/491 tests passed
+// with the bug present because nothing ever asserted on `screenOptions`.
+describe("app/(app)/_layout.tsx — native <Tabs> active/inactive tint colors (FR-001, Constitution VII)", () => {
+  it("sets tabBarActiveTintColor/tabBarInactiveTintColor from theme tokens, not left to the system default", () => {
+    const { screenOptions } = renderTabs().props;
+
+    expect(screenOptions.tabBarActiveTintColor).toBe(colors.text.link);
+    expect(screenOptions.tabBarInactiveTintColor).toBe(colors.text.secondary);
+  });
+
+  // `colors.brand.primary` (the lime) was the first instinct per the mockups, but it fails WCAG
+  // AA against a light tab-bar background (~1.29:1) — this guards that whichever token is chosen
+  // for the active tint actually clears AA against both plausible tab-bar backgrounds, rather than
+  // relying on eyeballing it (the same class of bug this whole defect batch was about).
+  it("the chosen active tint clears WCAG AA 4.5:1 against bg.surface and bg.page", () => {
+    const { screenOptions } = renderTabs().props;
+    const activeTint = screenOptions.tabBarActiveTintColor as string;
+
+    expect(contrastRatio(activeTint, colors.bg.surface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(activeTint, colors.bg.page)).toBeGreaterThanOrEqual(4.5);
   });
 });

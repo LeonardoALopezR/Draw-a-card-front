@@ -80,6 +80,10 @@ const SCANNER_SOURCE_FILES = [
   "RecentScansList.tsx",
   "FoundCardPanel.tsx",
   "useScanSimulation.ts",
+  // Human-requested follow-up (2026-08-06): the shared gradient-thumbnail component added when
+  // this feature's flat sample-card thumbnails became gradients — extends, not narrows, this
+  // guard, per T023's own explicit instruction.
+  "CardThumbnail.tsx",
 ];
 
 describe("scan visual-shell source files — camera-import guard (FR-007, SC-004)", () => {

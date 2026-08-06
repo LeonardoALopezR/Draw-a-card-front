@@ -7,8 +7,10 @@ import fs from "fs";
 import path from "path";
 import React from "react";
 import { render, screen } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 import { scanCopy } from "@/domain/i18n/copy/scan";
+import { colors, contrastRatio } from "@/theme";
 
 import { Viewfinder } from "./Viewfinder";
 
@@ -78,5 +80,21 @@ describe("Viewfinder", () => {
 
     const gearChip = screen.getByTestId("viewfinder-gear-chip", { includeHiddenElements: true });
     expect(gearChip.props["aria-hidden"]).toBe(true);
+  });
+
+  // Defect fix (specs/008-scan-experience, 2026-08-06, found on a real iPhone 17 Pro simulator,
+  // FR-004): the found-state heading used to render `colors.text.primary` (near-black) on
+  // `colors.viewfinder.bg` (near-black), effectively invisible on device — 491/491 tests passed
+  // with the bug present because no test asserted the heading's actual rendered color or computed
+  // its contrast. This test does both: it fails if the heading ever reverts to `text.primary` (or
+  // any other sub-4.5:1 color) against the viewfinder background.
+  it("renders the found-state heading in a color that clears WCAG AA against the viewfinder background", () => {
+    render(<Viewfinder state="found" />);
+
+    const heading = screen.getByText(scanCopy.es.viewfinderFoundHeading);
+    const style = StyleSheet.flatten(heading.props.style);
+
+    expect(style.color).toBe(colors.brand.primary);
+    expect(contrastRatio(style.color, colors.viewfinder.bg)).toBeGreaterThanOrEqual(4.5);
   });
 });

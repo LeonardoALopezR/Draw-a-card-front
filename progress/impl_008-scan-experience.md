@@ -2537,3 +2537,785 @@ fully closed:
 None of the above blocks `./init.sh`'s green result (T037) or the full test suite (T035) — both are
 genuinely green — but neither substitutes for the items above, per `docs/verification.md`'s own
 anti-pattern list ("an unreachable screen is not a verified screen").
+
+---
+
+## Run 11 — Post-ship layout bug fix: `<Link>` flex styles silently ignored on web
+
+**This is exactly the kind of gap Run 10's item 2 warned about.** The feature shipped in commit
+`39c3f02` with a real layout bug in `WebBottomBarNav.tsx`/`WebSidebarNav.tsx` that all 476 tests
+passed straight through, because those tests assert the flattened style *object* (which genuinely
+contained `gap`), never how `react-native-web` actually renders `<Link>` in a browser. **It was
+found by a live browser render, not by this test suite** — the exact failure mode Run 10 could
+only warn about in the abstract ("confirmed via `StyleSheet.flatten(...)` assertions... never
+measured against an actual rendered... screen") turned out to be a real, shipped defect, not a
+hypothetical gap. Recorded here as a concrete data point for this repo's verification history:
+component/screen tests that only assert style *props* are not sufficient evidence that a web
+layout renders correctly, and `docs/verification.md`'s "an unreachable screen is not a verified
+screen" caveat should probably be read to also cover "a screen whose tests never modeled the
+target renderer's actual box model."
+
+### The bug
+
+`WebBottomBarNav.tsx` and `WebSidebarNav.tsx` applied `gap`/`alignItems`/`justifyContent` (and,
+in the sidebar's case, `flexDirection: "row"`) directly to expo-router's `<Link>`, with the
+`Ionicons` glyph and the label `<Text>` as its direct children. `react-native-web` renders
+`<Link>` as an inline `<a>` on web (confirmed by reading
+`node_modules/react-native-web/dist/exports/Text/index.js`: the component's base style is
+`display: 'inline'`, same as the underlying `Text` primitive `Link` wraps). Flex properties have
+no effect on `display: inline` elements, so the icon and label rendered flush against each other
+with zero separation at both 375px and desktop widths — exactly as described in the bug report
+(home glyph flush against "Inicio", scan-frame glyph overlapping "Escanear").
+
+**A second, previously-undetected consequence of the same root cause**: `minWidth`/`minHeight`
+(T033's 44×44 tap-target floor) were *also* silently ignored on the same `display: inline`
+element — CSS `min-width`/`min-height` don't apply to non-replaced inline boxes either. This means
+the web tap target was smaller than the accessibility floor the whole time T033's own test
+(`StyleSheet.flatten(link.props.style).minWidth >= 44`) reported as passing. This wasn't called
+out in the original bug report but is the same class of defect and is fixed by the same change.
+
+### Fix
+
+Read `node_modules/expo-router/build/link/Link.js` and
+`node_modules/react-native-web/dist/exports/Text/index.js` before choosing a fix, to confirm
+*why* the styles were ignored rather than guessing.
+
+Adopted (and extended) the suggested fix — kept `<Link>` for navigation/semantics, moved the
+icon+label flex layout onto a nested `<View>` — plus one addition the write-up flagged as needing
+verification: also set `display: "flex"` on the `<Link>`'s own style (`styles.link`), not removed.
+
+Reasoning for keeping both changes rather than either alone:
+
+- **Nested `<View>` for `gap`/`alignItems`/`flexDirection`** (`styles.linkContent`): a `View`
+  is guaranteed to be a flex container on every platform without any `display` override, unlike
+  `Link`/`Text` whose default is web-only `inline`. This means the icon/label layout can't
+  silently regress again if a future edit touches `styles.link` and drops an easy-to-miss
+  `display: "flex"` line — a real structural guarantee, not just "this specific style object
+  happens to be correct today."
+- **`display: "flex"` kept on `<Link>`'s own style, not delegated to the inner `View`**: this is
+  what makes `minWidth`/`minHeight` (the actual tap target) apply to the real, focusable,
+  `accessibilityRole="link"` element — not just to an inner `View`'s bounding box. The task
+  explicitly flagged this risk ("make sure the touch target stays on the element that is actually
+  the link, not only on an inner View"), and it's a real risk: without `display: "flex"` on the
+  `Link` itself, an inline anchor's line-box height is driven by its content's rendered size
+  (here, the icon+label wrapper, well under 44px tall), so the tap target would still be broken —
+  just less visually obvious than the gap bug, and not what the bug report called out, but the same
+  underlying defect.
+
+An alternative considered and rejected: only adding `display: "flex"` to `<Link>`'s own style
+(no nested `View`, keeping `Ionicons`/`Text` as direct children, matching the *original* file
+structure exactly). This would have fixed the bug identically, with a smaller diff. Rejected for
+two reasons: (1) it's more fragile — a single style-object property is easy to delete in a future
+refactor without anyone noticing the web-only consequence, whereas a `View` wrapper is a
+structural fact of the component tree; (2) `jest-expo`'s default test environment renders through
+`react-test-renderer`, not `react-native-web`/jsdom-with-real-CSS-layout — there is no way to
+write a Jest test in this repo that verifies actual computed CSS (`display`, `gap`) takes effect
+in a browser, only that a given style value is *present*, which is precisely the class of
+assertion that let this bug ship in the first place. A `View`-wrapper *structure* is the one thing
+this Jest environment genuinely can verify as a reliable proxy for "this will actually flex on
+web," since `View`'s flex-by-default behavior is not conditional on any style value at all.
+
+**Accessibility properties confirmed unchanged**: `accessibilityRole="link"` and
+`accessibilityLabel` stay on the `<Link>` itself (unchanged from before — never moved to the
+inner `View`). The inner `View` carries no accessibility props of its own, so it introduces no new
+node in the accessibility tree — a plain, unlabeled `<div>` inside an `<a>` is accessibility-inert
+and does not affect `role`, name, or keyboard-focus behavior. Nesting a `<div>` inside an `<a>` is
+also valid HTML5 (the "transparent" content model for `<a>` explicitly permits flow content,
+unlike HTML4's stricter inline-only rule) and is not a new/exotic pattern — this repo already
+nests non-`Text` children (`Ionicons`) inside `<Link>` before this change; the only difference now
+is one more layer. Keyboard reachability and focus order are unaffected — the focusable element is
+still exactly one `<a>` per destination, unchanged in count or position in the DOM/tab order.
+
+### Other components in this feature checked for the same mistake
+
+Per the task's instruction, checked every component in `008-scan-experience` that could plausibly
+apply flex styles to a component rendering an inline web element:
+
+| Component | Uses `<Link>`? | Verdict |
+|---|---|---|
+| `ShellHeader.tsx` | No — `View` only | Not affected |
+| `TopRightControls.tsx` | No — `Pressable`/`View` only (`Pressable` renders a `<div>` on web via `react-native-web`, which defaults to flex-friendly block behavior, not `inline`) | Not affected |
+| `ScanEntryCard.tsx` | No — `Pressable`/`Text` only | Not affected |
+| `FoundCardPanel.tsx` | No — `Pressable`/`View`/`Text` only throughout (condition chips, stepper, toggle, links) | Not affected |
+| `CarteraPlaceholderScreen.tsx` / `TradesPlaceholderScreen.tsx` / `PerfilPlaceholderScreen.tsx` | No — no `Link`/`Pressable` at all, `View`/`Text` only | Not affected |
+| `HomeScreen.tsx` | No — no `Link`/`Pressable` beyond what `ScanEntryCard` already covers | Not affected |
+| `WebBottomBarNav.tsx`, `WebSidebarNav.tsx` | Yes | **Fixed this run** |
+
+One more `<Link>` exists in the repo — `SignInForm.tsx`'s "Create account" link — but it belongs
+to `005-login`, a different feature, out of this task's scope. Checked anyway for completeness:
+its `style={styles.createAccountLink}` wraps a single string child (no icon, no multi-child flex
+layout), so it isn't exhibiting this bug — there's no `gap`/`alignItems`/`justifyContent`/
+`flexDirection` on it to be silently ignored. Not touched.
+
+### Files changed
+
+- `src/features/navigation/WebBottomBarNav.tsx` — moved `alignItems`/`justifyContent`/`gap` off
+  `styles.link` onto a new `styles.linkContent`, applied to a new `<View>` wrapping the
+  `Ionicons`+`Text` children; added `display: "flex"` to `styles.link`. Added a header comment
+  explaining the bug and fix, referencing commit `39c3f02`.
+- `src/features/navigation/WebSidebarNav.tsx` — same shape: moved `flexDirection`/`alignItems`/
+  `gap` off `styles.link` onto a new `styles.linkContent` View wrapper; added `display: "flex"`
+  to `styles.link`. Same header comment pattern.
+- `src/features/navigation/WebBottomBarNav.test.tsx` — added a structural regression test
+  ("wraps each link's icon and label in a real View container, not as the Link's direct
+  children") that asserts `link.children` has length 1 and that the single child is a real
+  `View` containing the label text, using `findAllByType(View)` (the same technique
+  `TopRightControls.test.tsx` already established for verifying drawn structure) — not a style-
+  object assertion. Added `View`/`within` imports.
+- `src/features/navigation/WebSidebarNav.test.tsx` — identical regression test, same technique.
+- `src/features/navigation/README.md` — updated the `WebSidebarNav.tsx`/`WebBottomBarNav.tsx`
+  bullet to document the `display: "flex"` requirement and the `View`-wrapper structure, and
+  records that this fixes a bug that shipped in `39c3f02` and was only caught by a live browser
+  render.
+
+### Regression test verified to actually catch the bug (not just re-describe the fix)
+
+Before finalizing, stashed the two component changes (kept the two test file changes) and re-ran
+the new tests against the original, buggy component code:
+
+```
+FAIL src/features/navigation/WebSidebarNav.test.tsx
+  ● WebSidebarNav › wraps each link's icon and label in a real View container, not as the Link's direct children
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+FAIL src/features/navigation/WebBottomBarNav.test.tsx
+  ● WebBottomBarNav › wraps each link's icon and label in a real View container, not as the Link's direct children
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 13 passed, 15 total
+```
+
+Both new tests fail against the pre-fix code (`Ionicons` + `Text` as two direct children of
+`Link`) and pass against the fixed code (one `View` child). Restored the component fix
+(`git stash pop`) after confirming this.
+
+### `npx tsc --noEmit` — full repo, after the fix
+
+```
+$ npx tsc --noEmit
+(no output — clean)
+```
+
+### `npm test` — full repo, after the fix
+
+```
+Test Suites: 72 passed, 72 total
+Tests:       480 passed, 480 total
+Snapshots:   0 total
+```
+
+480 (was 476 before this run) — the four new tests are the two structural regression tests
+above plus nothing else; no pre-existing test needed a change.
+
+### Level 4 (build check) plus a direct inspection of the compiled web bundle
+
+Ran `npx expo export --platform web` to a scratch directory (outside the repo) — exported
+cleanly, 37 files, no errors. Since `jest-expo`'s default test environment cannot verify actual
+CSS/layout behavior (see "Fix" section above), inspected the *compiled* bundle's JS directly —
+the closest thing to "what a real browser will execute" available without a live browser tool in
+this environment — and confirmed both fixes are present verbatim in the shipped code:
+
+```
+// WebBottomBarNav's compiled StyleSheet.create(...) call:
+link:{display:"flex",alignItems:"center",justifyContent:"center",minWidth:44,minHeight:44,
+  paddingHorizontal:p.space.sm,paddingVertical:p.space.xs},
+linkContent:{alignItems:"center",justifyContent:"center",gap:2}
+
+// WebSidebarNav's compiled StyleSheet.create(...) call:
+link:{display:"flex",alignItems:"center",minWidth:44,minHeight:44,paddingVertical:12,
+  paddingHorizontal:12,borderRadius:8},
+linkContent:{flexDirection:"row",alignItems:"center",gap:h.space.sm}
+```
+
+Also confirmed the compiled JSX tree shape directly in the bundle:
+`(0,x.jsx)(l.Link,{...,style:j.link,children:(0,x.jsxs)(c.default,{style:j.linkContent,
+children:[(0,x.jsx)(n.Ionicons,{...}),(0,x.jsx)(s.default,{style:j.linkLabel,...})]})})` —
+`Link` wraps exactly one `View` (`c.default`), which wraps the icon and label. Deleted the
+scratch export directory afterward (not committed to the repo).
+
+### `./init.sh --skip-build`
+
+```
+RESULT: SUCCESS (8/8 stages passed)
+```
+
+Type-check clean, full test suite green (`--skip-build` used only because the fast path already
+had a manual `npx expo export --platform web` run moments earlier for the bundle inspection above
+— the two pre-existing `expo-doctor`/native-dependency-alignment warnings are unrelated outdated-
+package advisories, unchanged by this fix, and already present before this run).
+
+### Manual smoke check (Level 3) — disclosed gap, unchanged from every prior run in this feature
+
+**Not performed against a live browser in this environment.** `EXPO_PUBLIC_SUPABASE_URL`/
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty in `.env`, and no local backend responds on
+`localhost:3000` (confirmed with `curl`, connection refused). Per `docs/verification.md`'s "which
+live services to run" table, this means every destination behind the KYC gate — including both
+nav components fixed in this run — is genuinely unreachable in this environment; this is the same
+disclosed gap Run 10 already recorded ("this environment cannot reach any of the five shell
+destinations"). The compiled-bundle inspection above is the strongest verification available
+without that access, but it is not a substitute for an actual rendered browser confirming the
+icon/label gap is now visible and the tap target now measures ≥44×44 — that remains open per Run
+10's item 2 ("real keyboard-only navigation... never driven through an actual browser's focus
+engine") and item 4 ("a real 375px-wide browser resize... never a substitute for an actual
+rendered viewport").
+
+### Requirement traceability (this run)
+
+This is a bug fix to already-shipped, already-traced functionality (FR-001/FR-011/SC-002/SC-003,
+per `WebBottomBarNav.test.tsx`/`WebSidebarNav.test.tsx`'s own header comments) — no new
+functional requirement. The two new tests are regression coverage for the same FR-001/SC-002
+surface (destination links reachable and correctly structured), not a new FR.
+
+### Tasks now `[X]`
+
+No `tasks.md` task ID changes — this is a post-ship defect fix found by a live render, not a
+tracked task in `specs/008-scan-experience/tasks.md` (which was already 100% `[X]` before this
+run, per Run 10). No task line added or modified.
+
+### Deviations / notes for sign-off
+
+- **Extended the suggested fix** (nested `View` for `gap`/`alignItems`/`flexDirection`) with an
+  additional change the write-up explicitly asked to be verified rather than assumed: kept
+  `display: "flex"` on `<Link>`'s own style too, specifically to fix the tap-target risk the task
+  called out ("make sure the touch target stays on the element that is actually the link, not
+  only on an inner View"). Flagging this as a deviation from the literal suggested fix (which
+  didn't mention touching `<Link>`'s own `display`) for sign-off, even though it's a strict
+  improvement addressing the task's own explicit concern — see "Fix" section above for the full
+  reasoning on why the nested `View` alone would have left the tap target broken.
+- Also surfaces a previously-undetected defect (T033's tap-target floor was silently
+  non-functional on web this whole time, same root cause) that wasn't part of the original bug
+  report — documented above rather than silently folded in.
+- No other component in this feature exhibited the same mistake (see table above).
+- `src/features/identity/SignInForm.tsx`'s unrelated `<Link>` (feature `005-login`) was checked
+  and confirmed not affected, and left untouched as out of this task's scope.
+
+---
+
+## Run — `TopRightControls`/`ShellHeader` vertical-column layout bug (2026-08-06)
+
+**Caught by a live browser render, not the test suite.** `TopRightControls.tsx` (T007) laid its
+four icon controls out as `flexDirection: "column"` — reasonable in `004-home-scan-shell`, where
+they sat in one screen's top-right corner, but `ShellHeader.tsx` (T008) later made that stack
+shell-wide chrome above all five destinations (Run covering T009–T012). As shell-wide chrome, the
+column reserved the stack's full height as empty space on *every* page before any page content —
+measured in a real browser: ~285px on desktop, ~450px of an 812px mobile viewport (over half the
+screen). Jest/RNTL doesn't run a real layout engine (`react-test-renderer`, not
+`react-native-web`-in-a-browser), so nothing in the 483-test suite could have caught this — it only
+verified the *presence* of `flexDirection: "column"` and the four controls' individual props, never
+what a browser actually does with that style shell-wide. Same class of gap as the
+`WebSidebarNav`/`WebBottomBarNav` bug fixed above in commit `39c3f02`, different mechanism (a
+correctly-flexing `View` laid out in a shape nobody re-checked at the new shell-wide scale, vs. a
+`flexDirection` silently ignored by a web-`inline` element).
+
+### Fix
+
+- **`src/features/navigation/TopRightControls.tsx`**
+  - `styles.stack`: `flexDirection: "column"` → `"row"`, `alignItems: "flex-end"` → `"center"`
+    (all four controls are the same height; center is the correct cross-axis alignment for a
+    row of icon buttons, not the old column's right-edge alignment).
+  - Renamed `styles.controlRow` → `styles.controlWrapper` (it's no longer literally "a row" once
+    the parent is one) and made it the positioning context (`position: "relative"`, RN's default
+    anyway, kept explicit for clarity) for each control's feedback bubble.
+  - **The one piece that doesn't fall out of a plain column→row swap**: the "press → inline 'not
+    yet available' feedback" text. In the old column, feedback sat in-flow directly below its
+    control with nothing beside it to disturb. In a row, in-flow feedback text would widen that
+    control's flex item and visibly shove the other three controls sideways every time it toggled
+    on/off — the exact regression the task called out as most likely. **Decision**: made the
+    feedback `Text` `position: "absolute"` (removed from flex flow entirely), anchored `top: 48`
+    (just below the 44px control), `right: 0` (so it grows leftward under its own control rather
+    than off the right edge of the viewport for the rightmost "messages" control, given the whole
+    row is itself right-aligned by `ShellHeader`'s `justifyContent: "flex-end"`), with a small
+    `bg.surface`/`border.subtle` chip background + `zIndex: 20` so it reads as a legible floating
+    bubble rather than a bare label overlapping whatever page content sits just below the header
+    on web (`zIndex` matters here: CSS paints a positioned descendant with a numeric `z-index`
+    above later, non-positioned DOM siblings within the same stacking context regardless of DOM
+    order — the header renders before the page `Slot` in the DOM, so without it the feedback bubble
+    could paint underneath the page content that follows).
+  - No change to `accessibilityRole="button"`, `accessibilityLabel`, or the ≥44×44 `control` style
+    — all untouched, still per-control, still icon-first, still translated via
+    `useTranslation(navCopy)`.
+- **`src/features/navigation/ShellHeader.tsx`**
+  - `styles.row`: `alignItems: "flex-start"` → `"center"`. That value dated from when
+    `TopRightControls` was a tall column the row needed to pin to the top rather than
+    stretch/center; with a single, uniformly-tall row child, `"flex-start"` and `"center"` render
+    identically today, but `"center"` is the one that stays correct if this header ever grows a
+    second, differently-sized child (documented inline rather than left as stale reasoning).
+    `justifyContent: "flex-end"` and `paddingBottom: 16` both still make sense unchanged — the
+    header should still right-align its content and still leave breathing room before the page
+    content that follows.
+- Header comments added to both files explaining the bug, the measured impact, and the fix
+  (mirrors this file's existing convention for prior live-render-caught bugs).
+
+### Other callers of `TopRightControls` checked
+
+`grep -rl "TopRightControls"` across `src/` and `app/` turns up exactly one importer besides the
+component's own file/test: `src/features/navigation/ShellHeader.tsx`. No other caller depended on
+the old column layout — nothing was silently changed out from under a second consumer.
+
+### Files changed
+
+- `src/features/navigation/TopRightControls.tsx` — `stack` row layout, `controlRow` →
+  `controlWrapper` rename + `position: "relative"`, feedback bubble now `position: "absolute"`
+  with an anchored, backgrounded, z-indexed presentation; top-of-file comment explaining the fix.
+- `src/features/navigation/TopRightControls.test.tsx` — new/updated tests (below).
+- `src/features/navigation/ShellHeader.tsx` — `row.alignItems: "flex-start"` → `"center"`,
+  top-of-file comment explaining the fix.
+- `src/features/navigation/ShellHeader.test.tsx` — new test (below).
+
+### Tests written/updated — and why they'd actually catch this regression
+
+Per the task's explicit steer (same standard as the `39c3f02` fix above): prefer assertions that
+would actually catch a real rendered-structure regression over ones that just re-assert a style
+key exists. Two things make the row/column assertions here meaningfully different from a bare
+"style key exists" check, unlike the earlier `<Link>` bug: `View` is a genuine flex container on
+every platform by default (RN's Yoga layout engine, and react-native-web's `View` primitive,
+`display: flex` unconditionally) — there's no web-`inline`-style trap here where the style is
+present but silently ignored. So `flexDirection`/`position` assertions against a `View`'s style are
+a real proxy for what a browser/simulator will render, not the same class of false-positive the
+`Link`/`Text` bug exposed.
+
+- **`TopRightControls.test.tsx`**
+  - Renamed the existing order test from "top-to-bottom" to "left-to-right" (FR-011) — same
+    assertions, corrected wording now that the row is horizontal.
+  - New: `"lays the four controls out horizontally as a row, not stacked as a column"` — asserts
+    `StyleSheet.flatten(topRightControls.props.style).flexDirection === "row"` on the actual
+    rendered container (FR-011, the fix's core claim).
+  - New: `"shows feedback as an out-of-flow bubble that does not shift the other three controls"`
+    — asserts the feedback `Text`'s flattened style has `position: "absolute"` (the property that
+    actually removes it from flex flow) **and** that the other three buttons' accessibility-label
+    order is byte-for-byte unchanged before vs. after one control's feedback is activated
+    (FR-011, SC-005 — "never a silent no-op" for the feedback itself, while genuinely proving the
+    "must not shift siblings" requirement rather than assuming it from the style alone).
+- **`ShellHeader.test.tsx`**
+  - New: `"renders TopRightControls as a horizontal row, keeping the header a compact bar"` — the
+    same `flexDirection === "row"` assertion, but at the `ShellHeader` integration level (the
+    actual component all five destinations render), not only inside `TopRightControls`' own
+    isolated unit test.
+
+### Regression tests verified to actually catch the bug (mutation test)
+
+Stashed the two component changes (`git stash push -- TopRightControls.tsx ShellHeader.tsx`, kept
+the two test-file changes) and re-ran against the original, buggy (column-layout) component code:
+
+```
+● TopRightControls › lays the four controls out horizontally as a row, not stacked as a column
+  expect(received).toBe(expected)
+  Expected: "row"
+  Received: "column"
+
+● TopRightControls › shows feedback as an out-of-flow bubble that does not shift the other three controls
+  (position assertion — fails: old feedback style has no `position` key at all)
+
+● ShellHeader › renders TopRightControls as a horizontal row, keeping the header a compact bar
+  expect(received).toBe(expected)
+  Expected: "row"
+  Received: "column"
+
+Test Suites: 2 failed, 2 total
+Tests:       3 failed, 19 passed, 22 total
+```
+
+All three new tests fail against the pre-fix code and pass against the fixed code. Restored the
+fix (`git stash pop`) and confirmed `git status` matched the pre-stash diff exactly.
+
+### `npx tsc --noEmit`
+
+```
+(no output — clean)
+```
+
+### `npm test` — full repo, after the fix
+
+```
+Test Suites: 72 passed, 72 total
+Tests:       483 passed, 483 total
+Snapshots:   0 total
+Time:        1.984 s, estimated 2 s
+```
+
+483 (was 480 before this run) — the three new tests above, plus nothing else changed; no
+pre-existing test needed modification beyond the two renamed titles already noted.
+
+### `./init.sh`
+
+```
+RESULT: SUCCESS (10/10 stages passed)
+```
+
+Type-check clean, full suite green, all three bundle-export smoke checks (web/iOS/Android) green.
+The two `expo-doctor`/native-dependency-alignment warnings are the same pre-existing,
+unrelated-outdated-package advisories every prior run in this feature has already flagged —
+unchanged by this fix.
+
+### Manual smoke check (Level 3) — web only, disclosed gap same shape as every prior run
+
+Ran `npm run web` (Metro/`expo start --web`) against this environment's `.env`
+(`EXPO_PUBLIC_API_URL` + `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` all set — same
+"both services configured" row `docs/verification.md`'s table describes). Metro bundled cleanly
+(`Web Bundled ... node_modules/expo-router/entry.js`, no errors) — confirms the change doesn't
+crash on boot. This session's tool list has no browser-automation/screenshot tool (unlike whatever
+render caught the original bug, which happened outside this session), so — as the strongest
+available substitute, following the same technique already used for the `39c3f02` fix above —
+fetched the actual dev-server-compiled bundle (`curl .../node_modules/expo-router/entry.bundle...`)
+and located the compiled `TopRightControls.tsx` module verbatim in it. Confirmed the exact shipped
+`StyleSheet.create` call matches the source: `stack: { flexDirection: "row", alignItems: "center",
+gap: theme.space.sm }`, `controlWrapper: { position: "relative" }`, `feedback: { position:
+"absolute", top: 48, right: 0, zIndex: 20, ... }` — i.e., what a real browser will actually receive
+and render is the fixed code, not a stale cache or an unbundled edit.
+
+**What this does not cover** (disclosed, same class of gap Run 8/9's own "genuinely unverified"
+list above already names for this feature): this environment cannot reach any of the five shell
+destinations behind the KYC gate (no way to complete Supabase sign-in from this session), and has
+no real browser/simulator to visually confirm the actual pixel layout, the feedback bubble's
+readability against real page content, or that it truly doesn't visually overlap adjacent controls
+when several are active in the mobile 375px width — those remain open the same way item 4 in the
+"disclosed, unverified in this environment" list above already does. The compiled-bundle
+inspection above proves the *code that will run* is correct; it is not a substitute for an actual
+rendered viewport.
+
+### Requirement traceability (this run)
+
+Bug fix to already-shipped, already-traced functionality (FR-011/FR-012/SC-004/SC-005/SC-006, per
+`TopRightControls.test.tsx`'s own header comment) — no new functional requirement. The three new
+tests are regression coverage for the same FR-011 surface (four controls, correct order, visible
+feedback that never silently fails), not a new FR.
+
+### Tasks now `[X]`
+
+No `tasks.md` task ID changes — T007/T008 were already `[X]` before this run (this feature's
+`tasks.md` was already 100% complete per Run 10). This is a post-ship defect fix found by a live
+render, not a tracked task.
+
+### Deviations / notes for sign-off
+
+- **Feedback presentation is a judgment call, not spelled out in spec.md/plan.md**: the task
+  explicitly asked "decide how the feedback presents in a row layout and say what you chose" —
+  chose an absolutely-positioned, right-anchored bubble under each control (see "Fix" above for
+  the full reasoning). Flagging for sign-off since this is new visual treatment beyond what any
+  prior task/spec text described, even though it reuses only existing `src/theme` tokens and no
+  new dependency.
+- `ShellHeader.tsx`'s `alignItems: "flex-start"` → `"center"` change is currently a no-op given
+  today's single, uniformly-tall child — kept as a forward-looking correctness fix per the task's
+  explicit ask to check whether that style "still makes sense," not because it changes anything
+  observable today. Flagging in case a reviewer would rather leave it untouched until it matters.
+- No `tasks.md`/`spec.md`/`plan.md` edits made — this run stayed inside the two files + two test
+  files the task named.
+
+---
+
+## Follow-up run (2026-08-06): Gradient card thumbnails (human-requested, ad hoc — not a tasks.md task ID)
+
+**Context**: The human explicitly asked for the three sample cards' thumbnails to render as
+gradients (per the mockup transcription in `feature_list.json`'s 008 notes — "a rounded gradient
+thumbnail" per row, Dragón Eterno's detail thumbnail specifically "a purple gradient with a dragon
+glyph") instead of the flat color swatches T002/T014/T022 shipped. This is not a `tasks.md` task
+ID; all of `tasks.md`'s tasks were already `[X]` before this run. No `tasks.md` line was
+(re)checked as part of this run — it's a direct, disclosed follow-up edit, not new task
+completion.
+
+### Dependency decision — no new dependency added
+
+**Checked first, per the instruction, whether `expo-linear-gradient` was already present**: it
+is. `package.json` already declares `"expo-linear-gradient": "~13.0.2"` and it is already
+**imported and used** in this exact codebase — `src/features/identity/LoginScreenChrome.tsx`
+(006-visual-identity's T025, the `/login` background wash). `node_modules/expo-linear-gradient`
+confirms a genuine `NativeLinearGradient.web.tsx` variant exists (a real CSS-gradient
+implementation under `react-native-web`, not just an iOS/Android native module) — so this package
+already gets a real gradient on **all three** targets, not just native.
+
+**Chosen approach**: use the already-installed `expo-linear-gradient` via one new shared
+component, `src/features/scanner/CardThumbnail.tsx`. **No new runtime dependency was added** —
+`package.json` is unchanged by this run. This is strictly better than the two alternatives raised
+in the task: a CSS-gradient approach doesn't cover native, and a hand-layered-`View`
+approximation can't produce a true multi-stop blend and would have been extra, unjustified
+complexity when a real, already-present, already-proven-in-this-repo gradient primitive was
+sitting right there.
+
+### Files changed
+
+- `src/theme/colors.ts` — added `colors.gradients` (`cardPurple`, `cardEmber`, `cardTeal`), each a
+  two-stop `[light, dark]` hex tuple of the same hue (a standard Tailwind-shade ramp), documented
+  as decorative-only (not subject to `contrast.test.ts`'s WCAG text-on-background pairing checks,
+  since these never sit under text). No raw hex at any call site outside this one token file.
+- `src/domain/scanResults.ts` — `SampleCard.thumbnailColorToken: string` replaced with
+  `thumbnailGradient: readonly [string, string]`; each of the three `SAMPLE_CARDS` now points at
+  its own `colors.gradients.*` token (Dragón Eterno → `cardPurple`, Fénix de Tormenta →
+  `cardEmber`, Serpiente del Vacío → `cardTeal`) instead of the previous flat
+  `brand.primary`/`accent.priceGreen`/`text.link` swatch. Zero React/React Native import
+  preserved — the field is still plain data (an ordered color-stop tuple), not a component.
+- `src/domain/scanResults.test.ts` — added two tests: each card's `thumbnailGradient` is a real
+  `colors.gradients.*` token (identity-equality check, not a duplicated hex literal) with two
+  valid hex stops, and all three cards' gradients are pairwise distinct.
+- `src/features/scanner/CardThumbnail.tsx` (new) — the one shared decorative-gradient component,
+  consumed by both render sites below instead of two independently-styled `LinearGradient`s (this
+  repo's "extreme consistency" convention). Props: `gradient`, `size`, optional `testID`. Renders
+  square with `radius.row` corners, matching the old flat swatch's exact dimensions/corner radius.
+  Deliberately does **not** set `accessible={false}`/`importantForAccessibility=
+  "no-hide-descendants"` — investigated and confirmed those props also remove the node from this
+  repo's pinned `@testing-library/react-native`'s *default* queries (`getByTestId` etc. skip
+  accessibility-hidden elements unless a caller opts in with `{ includeHiddenElements: true }`),
+  which would have silently broken every existing `getByTestId("found-card-thumbnail")`/
+  `getByTestId("recent-scan-row-...")`-style assertion this component now nests inside. Omitting
+  any `accessibilityRole`/press handler already achieves "not focusable, not announced" — exactly
+  matching the plain `View` it replaces, which never carried an accessibility role either.
+- `src/features/scanner/CardThumbnail.test.tsx` (new) — renders the underlying `LinearGradient`
+  with the given gradient's `colors` prop in order, confirms square sizing from the `size` prop,
+  confirms no `accessibilityRole`/`onPress` (decorative, Constitution VII), and smoke-renders one
+  instance per sample card's own token.
+- `src/features/scanner/RecentScansList.tsx` — each row's flat
+  `<View style={{ backgroundColor: card.thumbnailColorToken }} />` replaced with
+  `<CardThumbnail gradient={card.thumbnailGradient} size={44}
+  testID={\`recent-scan-thumbnail-${card.id}\`} />`; the now-dead `styles.thumbnail` entry removed.
+- `src/features/scanner/RecentScansList.test.tsx` — added a test asserting exactly three
+  `LinearGradient`s render (one per `SAMPLE_CARDS` row), each with that row's own
+  `thumbnailGradient` colors in order, and that all three are pairwise distinct.
+- `src/features/scanner/FoundCardPanel.tsx` — the detail thumbnail's flat
+  `<View style={{ backgroundColor: card.thumbnailColorToken }} testID="found-card-thumbnail" />`
+  replaced with `<CardThumbnail gradient={card.thumbnailGradient} size={64}
+  testID="found-card-thumbnail" />` (same `testID`, so every pre-existing assertion that looked
+  it up still passes unchanged); the now-dead `styles.thumbnail` entry removed.
+- `src/features/scanner/FoundCardPanel.test.tsx` — extended the existing "renders the documented
+  fields for SAMPLE_CARDS[0]" test with an assertion that the underlying `LinearGradient`'s
+  `colors` prop equals `SAMPLE_CARDS[0].thumbnailGradient` (the mockups' "purple gradient" for
+  Dragón Eterno).
+- `src/features/scanner/ScanShellScreen.test.tsx` — added `"CardThumbnail.tsx"` to
+  `SCANNER_SOURCE_FILES`, the camera-import source-inspection guard's file list (FR-016) — a new
+  file under `src/features/scanner/`, so it must be covered by the same guard every other file in
+  that directory already is, per FR-016/T023's own "extend, not narrow" instruction.
+
+**Other thumbnail render sites checked**: grepped the full `src/`/`app/` tree for
+`thumbnailColorToken`/`SAMPLE_CARDS` usage — `RecentScansList.tsx` and `FoundCardPanel.tsx` are
+the only two render sites. No other file renders a card thumbnail.
+
+### Verification
+
+- `npx tsc --noEmit` — clean, no errors.
+- `npx jest src/domain/scanResults.test.ts src/features/scanner/CardThumbnail.test.tsx
+  src/features/scanner/RecentScansList.test.tsx src/features/scanner/FoundCardPanel.test.tsx
+  src/features/scanner/ScanShellScreen.test.tsx src/features/identity/LoginScreenChrome.test.tsx`
+  — 6 suites, 64 tests, all green (the only console noise is the pre-existing, unrelated
+  `@expo/vector-icons` async-`setState`-outside-`act` warning already present before this run).
+- `npm test` (full suite) — **73 suites, 491 tests, all green.**
+- `./init.sh` (no `--skip-*` flags) — `RESULT: SUCCESS (10/10 stages passed)`: type-check clean;
+  tests green; web/iOS/Android bundle exports all clean (confirms
+  `expo-linear-gradient` resolves on all three Metro module graphs, not just web — the exact
+  failure mode the task called out to catch). The two `WARN`s (`expo-doctor` outdated-dependency
+  advisory, native-dependency-version drift for `expo-image-picker`/`react-native`/
+  `react-native-safe-area-context`/`@types/react`/`typescript`) are pre-existing, unrelated to
+  this change (none of the flagged packages were touched), and were already present before this
+  run — non-blocking per `docs/verification.md`.
+- **Level 3 (manual smoke check) — partial, gap disclosed**: started `npx expo start --web` and
+  confirmed the web bundle serves (`HTTP 200`, real hydration HTML, no server-side crash) with no
+  Supabase/backend service running. Per `docs/verification.md`'s own documented trap, this
+  environment has no `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` configured, so
+  `resolveKycRoute()` resolves `"unauthenticated"` and every authenticated route (Escanear,
+  Inicio) redirects to `/login` before rendering — the gradient thumbnails were **not**
+  visually confirmed in a live browser for this run, the same disclosed limitation prior sessions
+  in this file recorded for KYC-gated screens. No screenshot-capable browser tool was available in
+  this session either. The strongest available substitute is what's above: direct
+  `LinearGradient`-prop assertions in `CardThumbnail.test.tsx`/`RecentScansList.test.tsx`/
+  `FoundCardPanel.test.tsx` (real rendered output, not "doesn't crash") plus all three platforms'
+  clean bundle exports.
+
+### Requirement traceability (this run)
+
+This is a presentation-only follow-up to already-`done` FR-008/FR-010 (the found-card panel's
+thumbnail, the sample-card pool) — no FR text changed, so no new FR ID exists to trace to. The
+existing FR-008/FR-010 traceability from the original implementation stands; this run's new
+assertions (gradient-colors-match-token, pairwise-distinct, decorative/non-focusable) are
+additional coverage of the same requirements' "thumbnail" clause, not a new requirement.
+
+### Deviations from the original plan.md/spec.md (disclosed, none require sign-off beyond this note)
+
+- `SampleCard.thumbnailColorToken: string` → `thumbnailGradient: readonly [string, string]` is a
+  breaking rename of a `src/domain` field spec.md's Key Entities section describes as "a
+  thumbnail color token" (singular). This directly implements the human's explicit request in
+  this follow-up prompt, which itself states the original flat-swatch result, though spec-compliant
+  at the time, doesn't match the mockups. No other consumer of `thumbnailColorToken` existed
+  outside the two files updated here (grep-confirmed).
+- Tasks.md itself was not edited — none of its task IDs describe this follow-up, so there was
+  nothing to mark `[X]` or otherwise change there.
+
+---
+
+## Follow-up run (2026-08-06): four defects found on a real iPhone 17 Pro simulator, invisible to the 491-test suite
+
+Scope: four disclosed native/visual defects in already-`done` feature work — no `tasks.md` task
+IDs describe these fixes (they're bugs in T009/T014/T015's implementations, not new task scope),
+so none is marked `[X]`; this section is the record instead. Each fix below is paired with a new
+test, and each new test was verified by hand to genuinely fail against the pre-fix code (temporarily
+reverted the source fix, kept the new test, ran it red, then restored the fix and re-ran it green —
+not just "written to plausibly cover the bug").
+
+### 1. "Gradeada" toggle rendered ~44pt tall instead of 28pt, overlapping the condition chip row
+
+**File**: `src/features/scanner/FoundCardPanel.tsx`. The single `Pressable` carrying
+`styles.toggleTrack` set `width: 48, height: 28` *and* `minHeight: 44` on the same View. On native,
+Yoga's `minHeight` wins over a shorter explicit `height`, so the visible pill rendered ~44pt tall —
+a large lime pill overlapping "Casi Nuevo" beneath it. The inline comment claiming the tap target
+was "padded out via alignItems/justifyContent centering" was simply wrong; centering doesn't shrink
+a View below its `minHeight`.
+
+**Fix**: split the single View into two — an outer `Pressable` (`styles.toggleTouchTarget`:
+`minHeight: 44, minWidth: 44`, centered) carrying the real ≥44×44 tap target and all the
+accessibility props, and an inner `View` (`styles.toggleTrack`, now genuinely `height: 28` with no
+`minHeight` on it) carrying the visible pill. Corrected the misleading comment. The inner track got
+its own `testID="found-card-graded-track"` so its visible size is independently assertable.
+
+**Test added** (`FoundCardPanel.test.tsx`, `renders the "Gradeada" toggle's visible track at 28pt
+tall with no minHeight override`): queries the track by that new testID and asserts
+`style.height === 28` and `style.minHeight === undefined`. **Verified to catch the bug**: reverted
+the component back to the single-View structure (restoring `minHeight: 44` alongside `height: 28`
+on the same style) — the test failed with `Unable to find an element with testID:
+found-card-graded-track` (the merged structure has no such element). Restored the fix, test passes.
+The pre-existing 44×44 tap-target test (`keeps every interactive element at a minimum 44x44 tap
+target`) still queries `found-card-graded-toggle` (now the outer Pressable) and continues to pass —
+the tap target itself didn't regress, only the previously-untested visible-size claim.
+
+### 2. "Condición actual" section label missing entirely
+
+**Files**: `src/domain/i18n/copy/scan.ts`, `src/domain/i18n/copy/scan.test.ts`,
+`src/features/scanner/FoundCardPanel.tsx`, `FoundCardPanel.test.tsx`. Grep-confirmed before this
+fix: no `conditionLabel`-shaped key existed anywhere in `scan.ts`, and `FoundCardPanel.tsx` rendered
+the condition-chip row with no heading above it — traced back to `tasks.md` T006's key list and
+T014's description, neither of which ever named this label, so no review or test ever missed it.
+
+**Fix**: added `conditionLabel` to both locales (`es`: "Condición actual", `en`: "Current
+condition"), and render `<Text style={styles.fieldLabel}>{t("conditionLabel")}</Text>` immediately
+above the chip row, wrapped in a new `conditionSection` style (`gap: space.sm`) — the same
+label-over-content shape `gradedField` already establishes for "Gradeada" and the grade-value box,
+reusing the existing `fieldLabel` (`typography.label.field`) treatment "Cantidad" and "Precio de
+mercado" already use, not a new style.
+
+**Tests added**:
+- `scan.test.ts`: `has the 'Condición actual' section label above the condition-chip row in both
+  locales` — asserts the exact Spanish/English strings.
+- `FoundCardPanel.test.tsx`: `renders the "Condición actual" label above the condition-chip row` —
+  asserts `screen.getByText(scanCopy.es.conditionLabel)` is truthy.
+
+**Verified to catch the bug**: removed the label-rendering block from the component (kept the copy
+key) — the component test failed with `Unable to find an element with text: Condición actual`.
+Restored the fix, test passes.
+
+### 3. Native tab bar's active tint was iOS system-default blue, not brand lime
+
+**File**: `app/(app)/_layout.tsx`. `<Tabs screenOptions={...}>` set no
+`tabBarActiveTintColor`/`tabBarInactiveTintColor`, so iOS fell back to system blue — disagreeing
+with the mockups (active destination in brand lime) and with the rest of the shell.
+
+**Contrast check performed, not eyeballed** (`node` one-off using the exact WCAG formula
+`src/theme/contrast.ts` implements, then re-verified via the real `contrastRatio` export):
+- `colors.brand.primary` (#C7F24C, the lime) against `colors.bg.surface` (#FFFFFF, the closest
+  theme token to iOS's near-white default tab-bar background): **~1.29:1** — far below the WCAG AA
+  4.5:1 floor (Constitution VII). Using the lime here would trade one invisible-text bug (defect 4
+  below) for another.
+- `colors.text.link` (#247B3D — this repo's existing "actionable/brand-accent green" token, already
+  used for `FoundCardPanel.tsx`'s "Cambiar" link and `SignInForm.tsx`'s "forgot password") against
+  `bg.surface`: **~5.28:1**. Against `colors.bg.page` (#ECEDEE, a plausible Android tab-bar
+  background): **~4.51:1**. Both clear the 4.5:1 floor.
+- Chose `colors.text.link` for `tabBarActiveTintColor` and the existing `colors.text.secondary` for
+  `tabBarInactiveTintColor` (already the app's established inactive/secondary-text token,
+  ~5.36:1 against `bg.surface`). Documented the rejected-lime reasoning inline in `_layout.tsx`'s
+  comment so a future edit doesn't reintroduce it without re-checking contrast.
+
+**Deviation flagged for the human**: the brief's "brand lime" for the active tab is not what
+shipped — `text.link` (dark green) was substituted because the lime literally fails contrast
+against a light tab-bar background. This mirrors defect 4's same class of problem in the opposite
+direction (light-on-light here vs. dark-on-dark there). No raw hex was introduced either way.
+
+**Test added** (`src/features/navigation/AppNativeLayout.test.tsx`, new describe block): shallow-
+renders `<AppTabsLayout />` (existing pattern in this file, no `NavigationContainer` needed) and
+asserts `screenOptions.tabBarActiveTintColor === colors.text.link` and
+`screenOptions.tabBarInactiveTintColor === colors.text.secondary`, plus a second test that computes
+`contrastRatio(activeTint, colors.bg.surface)` and `contrastRatio(activeTint, colors.bg.page)` and
+asserts both `>= 4.5` — so a future change to either token value, not just the assignment itself,
+still has to clear AA. **Verified to catch the bug**: reverted `_layout.tsx`'s `<Tabs>` back to
+`screenOptions={{ headerShown: true, header: () => <ShellHeader /> }}` (no tint props) — the first
+test failed with `Expected: "#247B3D", Received: undefined`, and the second failed with a
+`TypeError` inside `contrast.ts`'s `hexToRgb` (`undefined.replace`) since `activeTint` was
+`undefined`. Restored the fix, both pass.
+
+### 4. "¡Carta encontrada!" heading unreadable on the viewfinder's near-black background
+
+**File**: `src/features/scanner/Viewfinder.tsx`. `foundHeading` used `color: colors.text.primary`
+(#10281A) on `colors.viewfinder.bg` (#0B0F0C) — computed contrast **~1.23:1**, effectively
+invisible, versus the `checkmark-circle` icon directly above it which already correctly used
+`colors.brand.primary`.
+
+**Fix**: changed `foundHeading`'s color to `colors.brand.primary` — the same token the icon above it
+already uses, computed contrast **~14.92:1** against `viewfinder.bg`, comfortably clearing WCAG AA
+(and AAA). Documented the before/after ratios inline.
+
+**Idle-state hint checked too** (`"Apunta la cámara a la carta"`, `styles.hint`): already uses
+`colors.viewfinder.hintText` (#9CA3AF) against `viewfinder.bg`, computed contrast **~7.60:1** —
+clears AA comfortably (in fact clears AAA's 7:1 floor too). No change needed; documented this
+finding inline in the component and in the report here rather than leaving it unstated.
+
+**Tests added**:
+- `src/theme/contrast.test.ts`: new regression entry `brand.primary on viewfinder.bg (the
+  found-state heading, spec 008-scan-experience FR-004)` — guards the token pairing itself.
+- `Viewfinder.test.tsx`: `renders the found-state heading in a color that clears WCAG AA against the
+  viewfinder background` — renders `state="found"`, flattens the heading `Text`'s style, asserts
+  `style.color === colors.brand.primary` *and* independently recomputes
+  `contrastRatio(style.color, colors.viewfinder.bg) >= 4.5` from the actual rendered style (not just
+  the token in isolation) — so this fails both on a color regression and on a future token-value
+  drift.
+
+**Verified to catch the bug**: reverted `foundHeading.color` back to `colors.text.primary` — the
+`Viewfinder.test.tsx` test failed with `Expected: "#C7F24C", Received: "#10281A"`. Restored the fix,
+test passes. (`contrast.test.ts`'s own regression entry would also have failed on this pairing had
+the token itself regressed, independent of the component.)
+
+### Verification
+
+- `npx tsc --noEmit` — clean, no errors.
+- `npm test` — **73 suites, 498 tests, all green** (491 pre-existing + 7 new: 1 in
+  `scan.test.ts`, 2 in `FoundCardPanel.test.tsx`, 1 in `contrast.test.ts`, 1 in
+  `Viewfinder.test.tsx`, 2 in `AppNativeLayout.test.tsx`).
+- Each new test individually hand-verified to fail against the pre-fix source (see each defect's
+  "Verified to catch the bug" note above) — this is the direct answer to "the suite passes 491/491
+  with the bug present": each addition closes exactly the gap that let its defect through.
+- `./init.sh` (no `--skip-*` flags) — `RESULT: SUCCESS (10/10 stages passed)`. Type-check clean;
+  test suite green; web/iOS/Android bundle exports all clean. The two `WARN`s (`expo-doctor`
+  outdated-dependency advisory; native-dependency-version drift for `expo-image-picker`/
+  `react-native`/`react-native-safe-area-context`/`@types/react`/`typescript`) are pre-existing and
+  unrelated to this change (none of the flagged packages were touched).
+- **Level 3 (manual smoke check) — partial, gap disclosed, same trap this file has recorded before**:
+  ran `npx expo start --web` with no Supabase/backend service configured in this environment
+  (`.env` has an empty `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`, no backend at
+  `localhost:3000`). Confirmed the web bundle serves (`HTTP 200`, real hydration HTML, no
+  server-side crash) — proving the JS changes don't break bundling — but every authenticated route
+  (Escanear, Inicio, the five-tab shell) redirects to `/login` before rendering, so none of the four
+  fixes was visually confirmed in a live browser this run, and the native tab-bar tint fix (defect
+  3) has no web equivalent to check regardless (native-only, `<Tabs>` is not rendered on web). No
+  headless-browser/screenshot tool was available in this session. This is the same disclosed
+  limitation recorded earlier in this file for KYC-gated screens — the strongest available
+  substitute is the real-rendered-output component tests above (Level 2) plus the hand-verified
+  red→green check against the actual pre-fix source for each one (stronger than the usual
+  "write a plausible test" bar, precisely because the task noted the existing suite missed these).
+  All four defects were originally found on a real iPhone 17 Pro simulator by the human, per the
+  task — this run could not independently re-confirm on a simulator/device (none available in this
+  environment); the fixes are grounded in exact computed contrast ratios and RN layout semantics
+  (`minHeight` overriding `height` in Yoga) rather than a re-observed device screenshot.
+
+### Requirement traceability (this run)
+
+| Requirement | Test |
+|---|---|
+| FR-008 (found-card panel fields, incl. condition-chip row) | `FoundCardPanel.test.tsx`: `renders the "Condición actual" label above the condition-chip row`; `scan.test.ts`: `has the 'Condición actual' section label...` |
+| FR-018 / Constitution VII (≥44×44 tap targets) | `FoundCardPanel.test.tsx`: `renders the "Gradeada" toggle's visible track at 28pt tall with no minHeight override` (paired with the pre-existing `keeps every interactive element at a minimum 44x44 tap target`, unchanged and still green) |
+| FR-001 (five destinations reachable) / Constitution VII (accessible by default) | `AppNativeLayout.test.tsx`: `sets tabBarActiveTintColor/tabBarInactiveTintColor from theme tokens...`; `the chosen active tint clears WCAG AA 4.5:1 against bg.surface and bg.page` |
+| FR-004 (branded viewfinder, found visual state) / Constitution VII | `Viewfinder.test.tsx`: `renders the found-state heading in a color that clears WCAG AA...`; `contrast.test.ts`: `brand.primary on viewfinder.bg (the found-state heading...)` |
+
+### Deviations from the original plan.md/spec.md requiring sign-off
+
+- **Defect 3's active-tab color is `colors.text.link` (dark green), not the mockups' literal brand
+  lime.** Disclosed and reasoned above — the lime fails WCAG AA against a light tab-bar background
+  (~1.29:1), and using it anyway would ship a fifth invisible-text defect. This is a genuine
+  deviation from the visual mockups, not a style preference; flagging for explicit sign-off per this
+  task's own instruction ("say what you chose and why").
+- No other deviations. `tasks.md` was not edited (these are bug fixes to already-`[X]` tasks, not
+  new task scope); no task ID changed state as a result of this run.

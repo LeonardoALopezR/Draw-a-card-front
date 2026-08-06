@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 import React from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import { render, screen } from "@testing-library/react-native";
 
 import { scanCopy } from "@/domain/i18n/copy/scan";
@@ -74,5 +75,22 @@ describe("RecentScansList", () => {
     expect(screen.queryByText("Charizard")).toBeNull();
     expect(screen.queryByText("Blastoise")).toBeNull();
     expect(screen.queryByText("Venusaur")).toBeNull();
+  });
+
+  // Human-requested follow-up (2026-08-06): each row renders a gradient thumbnail
+  // (card.thumbnailGradient via CardThumbnail.tsx), not a flat color swatch — one LinearGradient
+  // per SAMPLE_CARDS row, each with that card's own distinct two-stop gradient.
+  it("renders a distinct gradient thumbnail per row, matching each card's own thumbnailGradient", () => {
+    render(<RecentScansList />);
+
+    const gradients = screen.UNSAFE_getAllByType(LinearGradient);
+    expect(gradients).toHaveLength(SAMPLE_CARDS.length);
+
+    gradients.forEach((gradient, index) => {
+      expect(gradient.props.colors).toEqual(SAMPLE_CARDS[index].thumbnailGradient);
+    });
+
+    const serialized = SAMPLE_CARDS.map((card) => card.thumbnailGradient.join(","));
+    expect(new Set(serialized).size).toBe(SAMPLE_CARDS.length);
   });
 });
