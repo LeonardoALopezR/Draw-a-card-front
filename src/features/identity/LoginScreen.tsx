@@ -18,9 +18,25 @@
 // site, app/(auth)/login.tsx, T014) — see submitNewPassword's DI shape below (only
 // verifyCode/updatePassword/discard, obtained from the LAZILY created `recoverySession`, ever
 // participate in that step). LoginScreen.test.tsx asserts this explicitly.
+//
+// 006-visual-identity T034 (FR-006 — regression-critical, spec.md US2 AS1/AS2/AS4): wraps every
+// per-mode branch's existing JSX in LoginScreenChrome (T025/T026, the mobile-gradient-wash vs.
+// web-card-over-blooms background split, expressed via the .web.tsx convention — no Platform.OS
+// branch here) and adds the brand block (BrandMark + display.xl "Draw a Card" + body.tagline,
+// brief §4 items 1-3, via useTranslation(loginCopy)) directly above <SignInForm> in the
+// "sign-in" branch ONLY — not in "request-reset"/"reset-with-code"/the "Signing you in…" view,
+// since the brief's mockups only depict the plain sign-in view (plan.md's "Login screen — chrome"
+// Research Decision). This is a JSX-only change: no state, handler, or prop shape below is
+// touched. The "Signing you in…" text now also resolves through useTranslation(loginCopy)
+// (its "signingIn" key, the same one SignInForm already uses for its busy-button label) rather
+// than a hardcoded English literal — LoginScreen.test.tsx's assertion for this view was updated
+// to match (still asserting the same accessibilityRole="alert"/testID regression guard, only the
+// literal text changed, exactly the same ripple already applied to every other query in that file
+// by T028/T030/T032).
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { loginCopy } from "@/domain/i18n/copy/login";
 import type { SignInWithPassword } from "@/domain/login";
 import type {
   DiscardRecoverySession,
@@ -30,7 +46,11 @@ import type {
 } from "@/domain/passwordReset";
 import { submitNewPassword } from "@/domain/passwordReset";
 import type { RequestResetInput, ResetWithCodeInput, SignInInput } from "@/domain/schemas";
+import { useTranslation } from "@/features/i18n/LocaleContext";
+import { BrandMark } from "@/features/ui/BrandMark";
+import { colors, space, typography } from "@/theme";
 
+import { LoginScreenChrome } from "./LoginScreenChrome";
 import { RequestPasswordResetForm } from "./RequestPasswordResetForm";
 import { ResetPasswordForm, type ResetPasswordFieldError } from "./ResetPasswordForm";
 import { SignInForm } from "./SignInForm";
@@ -72,6 +92,12 @@ export interface LoginScreenProps {
 }
 
 export function LoginScreen({ signIn, requestPasswordReset, createPasswordRecoverySession }: LoginScreenProps) {
+  // 006-visual-identity T034: routes every string this component renders directly (the
+  // "Signing you in…" transition text, the brand block's title/tagline) through the same
+  // dictionary SignInForm/RequestPasswordResetForm/ResetPasswordForm already consume — no
+  // hardcoded copy left in this file (FR-010).
+  const t = useTranslation(loginCopy);
+
   const [mode, setMode] = useState<LoginScreenMode>("sign-in");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | undefined>();
@@ -240,59 +266,80 @@ export function LoginScreen({ signIn, requestPasswordReset, createPasswordRecove
 
   if (signInSucceeded) {
     return (
-      <View style={styles.screen}>
-        {/* T017 (Constitution VII): accessibilityRole="alert" (not "text") so VoiceOver/TalkBack
-            and web screen readers announce this transition on their own — this view mounts in
-            place of SignInForm with no user-initiated focus change, mirroring the same
-            role="alert" convention this feature already uses for its other transitional
-            confirmation banners (SignInForm's confirmationMessage/serverError). */}
-        <Text style={styles.signingInText} accessibilityRole="alert" testID="login-signing-in">
-          Signing you in…
-        </Text>
-      </View>
+      <LoginScreenChrome>
+        <View style={styles.screen}>
+          {/* T017 (Constitution VII): accessibilityRole="alert" (not "text") so VoiceOver/
+              TalkBack and web screen readers announce this transition on their own — this view
+              mounts in place of SignInForm with no user-initiated focus change, mirroring the
+              same role="alert" convention this feature already uses for its other transitional
+              confirmation banners (SignInForm's confirmationMessage/serverError). */}
+          <Text style={styles.signingInText} accessibilityRole="alert" testID="login-signing-in">
+            {t("signingIn")}
+          </Text>
+        </View>
+      </LoginScreenChrome>
     );
   }
 
   if (mode === "request-reset") {
     return (
-      <View style={styles.screen}>
-        <RequestPasswordResetForm
-          onSubmit={handleRequestReset}
-          onBack={handleBackToSignIn}
-          isSubmitting={isRequestingReset}
-          serverError={resetRequestServerError}
-        />
-      </View>
+      <LoginScreenChrome>
+        <View style={styles.screen}>
+          <RequestPasswordResetForm
+            onSubmit={handleRequestReset}
+            onBack={handleBackToSignIn}
+            isSubmitting={isRequestingReset}
+            serverError={resetRequestServerError}
+          />
+        </View>
+      </LoginScreenChrome>
     );
   }
 
   if (mode === "reset-with-code") {
     return (
-      <View style={styles.screen}>
-        <ResetPasswordForm
-          onSubmit={handleResetSubmit}
-          onResend={handleResend}
-          onBack={handleBackToSignIn}
-          initialEmail={resetEmail}
-          isSubmitting={isResetSubmitting}
-          isResending={isResending}
-          serverError={resetServerError}
-        />
-      </View>
+      <LoginScreenChrome>
+        <View style={styles.screen}>
+          <ResetPasswordForm
+            onSubmit={handleResetSubmit}
+            onResend={handleResend}
+            onBack={handleBackToSignIn}
+            initialEmail={resetEmail}
+            isSubmitting={isResetSubmitting}
+            isResending={isResending}
+            serverError={resetServerError}
+          />
+        </View>
+      </LoginScreenChrome>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <SignInForm
-        onSubmit={handleSubmit}
-        onForgotPassword={handleForgotPassword}
-        isSubmitting={isSubmitting}
-        serverError={serverError}
-        confirmationMessage={signInConfirmationMessage}
-        initialEmail={prefillEmail}
-      />
-    </View>
+    <LoginScreenChrome>
+      <View style={styles.screen}>
+        {/* Brief §4 items 1-3, this branch only — the mockups have no forgot-password/
+            signing-in-transition equivalent, so the brand block never renders there. */}
+        <View style={styles.brandBlock}>
+          <BrandMark size={112} />
+          {/* Follow-up sign-off (post-006-visual-identity): SignInForm's own "Sign in" heading
+              (loginCopy.signInTitle) was removed as out-of-brief per docs/design-brief-visual-
+              identity.md §4's content order — this "Draw a Card" title is now the sign-in view's
+              single accessibility heading (Constitution VII), matching the mockups. */}
+          <Text style={styles.brandTitle} accessibilityRole="header">
+            {t("brandTitle")}
+          </Text>
+          <Text style={styles.tagline}>{t("tagline")}</Text>
+        </View>
+        <SignInForm
+          onSubmit={handleSubmit}
+          onForgotPassword={handleForgotPassword}
+          isSubmitting={isSubmitting}
+          serverError={serverError}
+          confirmationMessage={signInConfirmationMessage}
+          initialEmail={prefillEmail}
+        />
+      </View>
+    </LoginScreenChrome>
   );
 }
 
@@ -301,11 +348,32 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: space.xxl,
   },
+  // 006-visual-identity T034: was a raw "#374151" literal pre-dating this feature — replaced with
+  // the token module's colors.text.secondary (SC-001, FR-001), since this file is now genuinely
+  // touched/restyled by this task rather than left as-is.
   signingInText: {
-    fontSize: 16,
+    fontSize: typography.body.tagline.fontSize,
     fontWeight: "500",
-    color: "#374151",
+    color: colors.text.secondary,
+  },
+  brandBlock: {
+    alignItems: "center",
+    gap: space.sm,
+    marginBottom: space.xxl,
+  },
+  brandTitle: {
+    fontSize: typography.display.xl.fontSize,
+    fontWeight: typography.display.xl.fontWeight,
+    fontFamily: typography.display.xl.fontFamily,
+    color: colors.text.primary,
+    textAlign: "center",
+  },
+  tagline: {
+    fontSize: typography.body.tagline.fontSize,
+    fontWeight: typography.body.tagline.fontWeight,
+    color: typography.body.tagline.color,
+    textAlign: "center",
   },
 });

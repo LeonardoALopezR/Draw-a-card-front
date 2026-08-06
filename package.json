@@ -11,6 +11,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@expo-google-fonts/playfair-display": "^0.4.2",
     "@hookform/resolvers": "^3.9.0",
     "@opentelemetry/api": "^1.9.1",
     "@supabase/supabase-js": "^2.45.0",
@@ -18,7 +19,9 @@
     "expo": "~51.0.0",
     "expo-camera": "~15.0.0",
     "expo-constants": "~16.0.2",
+    "expo-font": "~12.0.10",
     "expo-image-picker": "~15.0.0",
+    "expo-linear-gradient": "~13.0.2",
     "expo-linking": "~6.3.1",
     "expo-router": "~3.5.0",
     "expo-secure-store": "~13.0.0",

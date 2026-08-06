@@ -1,13 +1,12 @@
 // T003 (FR-001, FR-003, FR-004, FR-010): the returning-user sign-in form. Follows
 // RegistrationForm's (001-registration-kyc, T011) established conventions exactly: React Hook
 // Form + zodResolver (signInSchema, src/domain/schemas.ts) for email/password, the shared
-// FormField wrapper for label/inline-error layout, the same TextInput/Pressable/style-constant
-// shapes, and a `serverError` prop as the one channel a screen uses to feed a backend error back
-// into the form. Unlike RegistrationForm's serverError (which can carry a specific field, e.g.
-// "UsernameTaken"), this form's serverError is always general (FR-004): Supabase's own sign-in
-// rejection never distinguishes "wrong password" from "unregistered email", so there is no field
-// to attribute it to — rendered as one inline banner near the top of the form, never routed
-// through react-hook-form's setError for a specific field.
+// FormField wrapper for label/inline-error layout, a `serverError` prop as the one channel a
+// screen uses to feed a backend error back into the form. Unlike RegistrationForm's serverError
+// (which can carry a specific field, e.g. "UsernameTaken"), this form's serverError is always
+// general (FR-004): Supabase's own sign-in rejection never distinguishes "wrong password" from
+// "unregistered email", so there is no field to attribute it to — rendered as one inline banner
+// near the top of the form, never routed through react-hook-form's setError for a specific field.
 //
 // "Forgot password?" is a local UI-state trigger (onForgotPassword), NOT a route change — the
 // whole forgot-password flow stays on this same /login screen as extra LoginScreen (T004/T013)
@@ -16,12 +15,27 @@
 // "First use of expo-router's <Link>" Research Decision) — <Pressable> + router.push is
 // deliberately not used here, since <Link> renders a real <a href> on web with no functional
 // difference on native.
+//
+// T028 (006-visual-identity, FR-006, spec.md US2 AS3/AS6): restyled to docs/design-brief-visual-
+// identity.md §4's items 4-10 — this file owns the email/password Field pair, the right-aligned
+// "Olvidé mi contraseña" link, the "Entrar" PrimaryButton, the OrDivider, the "Crear cuenta"
+// SecondaryButton-styled Link, and the legal line. Items 1-3 (BrandMark/title/tagline) are
+// LoginScreen.tsx's responsibility (T034), not this file's. Every rendered string now resolves
+// through useTranslation(loginCopy) — zero hardcoded copy remains. Every existing prop
+// (onSubmit/onForgotPassword/isSubmitting/serverError/confirmationMessage/initialEmail) and the
+// react-hook-form + zodResolver(signInSchema) wiring are byte-for-byte unchanged — this restyle
+// touches only the returned JSX/styles.
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { signInSchema, type SignInInput } from "@/domain/schemas";
+import { loginCopy } from "@/domain/i18n/copy/login";
+import { useTranslation } from "@/features/i18n/LocaleContext";
+import { colors, CONTROL_HEIGHT, radius, space, typography } from "@/theme";
+import { OrDivider } from "@/features/ui/OrDivider";
+import { PrimaryButton } from "@/features/ui/PrimaryButton";
 
 import { FormField } from "./FormField";
 
@@ -54,6 +68,7 @@ export function SignInForm({
   confirmationMessage,
   initialEmail,
 }: SignInFormProps) {
+  const t = useTranslation(loginCopy);
   const {
     control,
     handleSubmit,
@@ -67,10 +82,6 @@ export function SignInForm({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title} accessibilityRole="header">
-        Sign in
-      </Text>
-
       {confirmationMessage ? (
         <Text style={styles.confirmation} accessibilityRole="alert" testID="sign-in-confirmation-message">
           {confirmationMessage}
@@ -83,7 +94,7 @@ export function SignInForm({
         </Text>
       ) : null}
 
-      <FormField label="Email" error={errors.email?.message} testID="sign-in-email-field">
+      <FormField label={t("emailLabel")} error={errors.email?.message} testID="sign-in-email-field">
         <Controller
           control={control}
           name="email"
@@ -94,7 +105,9 @@ export function SignInForm({
               onChangeText={field.onChange}
               onBlur={field.onBlur}
               editable={!isSubmitting}
-              accessibilityLabel="Email"
+              accessibilityLabel={t("emailLabel")}
+              placeholder={t("emailPlaceholder")}
+              placeholderTextColor={colors.text.placeholder}
               autoCapitalize="none"
               autoComplete="email"
               keyboardType="email-address"
@@ -104,7 +117,7 @@ export function SignInForm({
         />
       </FormField>
 
-      <FormField label="Password" error={errors.password?.message} testID="sign-in-password-field">
+      <FormField label={t("passwordLabel")} error={errors.password?.message} testID="sign-in-password-field">
         <Controller
           control={control}
           name="password"
@@ -115,7 +128,7 @@ export function SignInForm({
               onChangeText={field.onChange}
               onBlur={field.onBlur}
               editable={!isSubmitting}
-              accessibilityLabel="Password"
+              accessibilityLabel={t("passwordLabel")}
               // A returning user's password already exists — "password" (not "password-new",
               // RegistrationForm's hint), matching spec.md's Platform notes ("the standard
               // autoComplete=\"password\"/textContentType hints already used elsewhere").
@@ -128,107 +141,115 @@ export function SignInForm({
         />
       </FormField>
 
+      {/* Brief §4 item 6: right-aligned body.link, still the same local onForgotPassword
+          UI-state trigger — never a route change (FR-006). */}
       <Pressable
         style={styles.forgotPasswordButton}
         onPress={onForgotPassword}
         disabled={isSubmitting}
         accessibilityRole="button"
-        accessibilityLabel="Forgot password?"
+        accessibilityLabel={t("forgotPassword")}
         accessibilityState={{ disabled: isSubmitting }}
         testID="sign-in-forgot-password-button"
       >
-        <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+        <Text style={styles.forgotPasswordText}>{t("forgotPassword")}</Text>
       </Pressable>
 
-      <Pressable
-        style={[styles.button, isSubmitting ? styles.buttonDisabled : null]}
+      {/* Brief §4 item 7. */}
+      <PrimaryButton
+        label={isSubmitting ? t("signingIn") : t("signInButton")}
         onPress={submit}
-        disabled={isSubmitting}
-        accessibilityRole="button"
-        accessibilityLabel="Sign in"
-        accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+        busy={isSubmitting}
         testID="sign-in-submit-button"
-      >
-        <Text style={styles.buttonText}>{isSubmitting ? "Signing in…" : "Sign in"}</Text>
-      </Pressable>
+      />
 
+      {/* Brief §4 item 8. */}
+      <OrDivider />
+
+      {/* Brief §4 item 9: SecondaryButton's visual vocabulary applied directly to the existing
+          <Link href="/register"> — expo-router's <Link> renders as a Text-backed navigation
+          element, not a Pressable, so it can't literally host the SecondaryButton component
+          (which takes onPress, not href); the navigation behavior itself is unchanged. */}
       <Link
         href="/register"
         style={styles.createAccountLink}
-        accessibilityLabel="Create account"
+        accessibilityLabel={t("createAccount")}
         testID="sign-in-create-account-link"
       >
-        Create account
+        {t("createAccount")}
       </Link>
+
+      {/* Brief §4 item 10: both link phrases nested as separate <Text> children so they can
+          carry text.link's color independently while inheriting body.legal's other properties
+          (typography.ts's documented convention). */}
+      <Text style={styles.legal}>
+        {t("legalPrefix")}{" "}
+        <Text style={styles.legalLink}>{t("termsLink")}</Text>
+        {" "}
+        {t("legalMiddle")}{" "}
+        <Text style={styles.legalLink}>{t("privacyLink")}</Text>
+      </Text>
     </View>
   );
 }
 
-// Minimum 44x44 tap targets (Constitution VII, SC-003/FR-010) on every interactive element;
-// single narrow column, unmodified at a 375px-wide web viewport through tablet/desktop widths —
-// mirrors RegistrationForm's layout exactly (docs/conventions.md: no new visual language).
+// Minimum 44x44 tap targets (Constitution VII, FR-013) on every interactive element;
+// single narrow column, unmodified at a 375px-wide web viewport through tablet/desktop widths.
 const styles = StyleSheet.create({
   container: {
     width: "100%",
     maxWidth: 420,
-    gap: 16,
+    gap: space.lg,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "600",
-  },
+  // T050 follow-up (T023-T024a review nit): sources colors.text.danger instead of the raw
+  // "#dc2626" literal — see FormField.tsx's and src/theme/colors.ts's comments.
   generalError: {
     fontSize: 14,
-    color: "#dc2626",
+    color: colors.text.danger,
   },
   confirmation: {
     fontSize: 14,
-    color: "#374151",
+    color: colors.text.secondary,
   },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    fontSize: typography.body.input.fontSize,
+    fontWeight: typography.body.input.fontWeight,
+    color: colors.text.primary,
+    padding: 0,
   },
   forgotPasswordButton: {
     minHeight: 44,
     minWidth: 44,
     justifyContent: "center",
-    alignSelf: "flex-start",
+    alignSelf: "flex-end",
   },
   forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
-  },
-  button: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 8,
-    backgroundColor: "#111827",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: typography.body.link.fontSize,
+    fontWeight: typography.body.link.fontWeight,
+    color: typography.body.link.color,
   },
   createAccountLink: {
-    minHeight: 44,
-    minWidth: 44,
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#111827",
+    width: "100%",
+    height: CONTROL_HEIGHT,
+    lineHeight: CONTROL_HEIGHT,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg.surface,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    color: colors.text.primary,
+    fontSize: typography.button.label.fontSize,
+    fontWeight: typography.button.label.fontWeight,
     textAlign: "center",
+    // Android-only; iOS/web center via the matching lineHeight above instead.
     textAlignVertical: "center",
+  },
+  legal: {
+    fontSize: typography.body.legal.fontSize,
+    fontWeight: typography.body.legal.fontWeight,
+    textAlign: typography.body.legal.textAlign,
+    color: typography.body.legal.color,
+  },
+  legalLink: {
+    color: colors.text.link,
   },
 });
