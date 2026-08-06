@@ -41,6 +41,13 @@ jest.mock("expo-router", () => {
   };
 });
 
+// T012 (specs/008-scan-experience): both WebSidebarNav and WebBottomBarNav now render
+// ShellHeader (T008) above their <Slot />, which calls useSafeAreaInsets() — the library's own
+// official Jest mock, same technique WebSidebarNav.test.tsx/WebBottomBarNav.test.tsx use.
+jest.mock("react-native-safe-area-context", () =>
+  require("react-native-safe-area-context/jest/mock").default
+);
+
 import { useWindowDimensions } from "react-native";
 
 import AppWebLayout from "../../../app/(app)/_layout.web";

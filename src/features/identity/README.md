@@ -4,6 +4,15 @@ Mirrors the backend's `identity` module. Screens/components for this domain live
 built on top of `src/domain` (portable logic) and `src/lib` (Expo-specific wiring). See
 `specs/` at the project root for the spec defining what belongs here.
 
+## `PerfilPlaceholderScreen.tsx` is not `ProfileForm.tsx`
+
+`PerfilPlaceholderScreen.tsx` (specs/008-scan-experience T029) is a contentless placeholder
+reserving the shell's Perfil destination (`app/(app)/perfil.tsx`) for a future profile-view
+feature — no real profile data, no form fields, no shared code with `ProfileForm.tsx`.
+`ProfileForm.tsx` is a wholly separate component: the registration flow's form for
+collecting/submitting profile data during KYC onboarding. The two are never rendered
+interchangeably and should not be merged.
+
 ## Prerequisite: Supabase "Reset Password" email template must include `{{ .Token }}`
 
 `005-login`'s forgot-password flow (`RequestPasswordResetForm.tsx` / `ResetPasswordForm.tsx` /

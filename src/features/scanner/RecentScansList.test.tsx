@@ -1,13 +1,15 @@
-// Covers FR-008 (the "recent scans" rows are static local placeholder content — no
-// src/domain import, no fetch call, no persistence — marked as placeholder-until-the-real-
-// scanner-feature-ships) and FR-007 (inert scan visual shell, camera-import prohibition) for
-// src/features/scanner/RecentScansList.tsx (T042).
+// Covers FR-010 (the "recent scans" rows read from SAMPLE_CARDS, src/domain/scanResults.ts —
+// the same shared, static, hardcoded sample pool the found-card panel reads from, not a second
+// independently-typed list) and FR-007/FR-016 (inert scan visual shell, camera-import
+// prohibition, no fetch/API call) for src/features/scanner/RecentScansList.tsx
+// (006-visual-identity's T042, extended by specs/008-scan-experience/tasks.md's T022).
 import fs from "fs";
 import path from "path";
 import React from "react";
 import { render, screen } from "@testing-library/react-native";
 
 import { scanCopy } from "@/domain/i18n/copy/scan";
+import { formatListMeta, SAMPLE_CARDS } from "@/domain/scanResults";
 
 import { RecentScansList } from "./RecentScansList";
 
@@ -23,13 +25,13 @@ describe("RecentScansList", () => {
     expect(importLines.some((line) => /camera/i.test(line))).toBe(false);
   });
 
-  // FR-008 (spec.md US3 AS6): the recent-scans rows are static local placeholder content — no
-  // src/domain *fetch*, no API call, no persistence (FR-008's exact wording) — checked via
+  // FR-016: this file's rows are static, compiled-in fixture data (SAMPLE_CARDS,
+  // src/domain/scanResults.ts) — no src/domain *fetch*, no API call, no persistence — checked via
   // source inspection (not just current behavior, since an unused-but-present import could slip
-  // past a behavior-only test). The only src/domain import this file may have is the static
-  // i18n copy dictionary (`@/domain/i18n/copy/...`, required by FR-010 so the section heading
-  // isn't hardcoded) — never `@/domain/api-client` or any other data-fetching module. The
-  // placeholder nature is documented in an adjacent code comment.
+  // past a behavior-only test). The only src/domain imports this file may have are the static
+  // i18n copy dictionary (`@/domain/i18n/...`, FR-017) and the static sample-card module
+  // (`@/domain/scanResults`, FR-010) — never `@/domain/api-client` or any other data-fetching
+  // module.
   it("imports no data-fetching src/domain module and calls no fetch", () => {
     const source = fs.readFileSync(path.join(__dirname, "RecentScansList.tsx"), "utf8");
     const importLines = source
@@ -37,21 +39,40 @@ describe("RecentScansList", () => {
       .filter((line) => /^\s*import\b/.test(line) || /require\(/.test(line));
     const domainImportLines = importLines.filter((line) => /from ["']@\/domain/.test(line));
 
-    expect(domainImportLines.every((line) => /@\/domain\/i18n\//.test(line))).toBe(true);
+    expect(
+      domainImportLines.every(
+        (line) => /@\/domain\/i18n\//.test(line) || /@\/domain\/scanResults/.test(line)
+      )
+    ).toBe(true);
     expect(importLines.some((line) => /api-client/.test(line))).toBe(false);
     expect(source).not.toMatch(/\bfetch\(/);
-    expect(source).toMatch(/PLACEHOLDER-UNTIL-THE-REAL-SCANNER-FEATURE-SHIPS/);
   });
 
-  // FR-007, FR-010: renders the section heading and every placeholder row's content through
-  // real rendered output, defaulting to Spanish (DEFAULT_LOCALE) with no <LocaleProvider>
-  // wrapping the render.
-  it("renders the section heading and placeholder rows", () => {
+  // FR-010 (spec.md's Design note, "the sample-card pool"): renders the section heading and every
+  // one of the three shared SAMPLE_CARDS rows — Dragón Eterno, Fénix de Tormenta, Serpiente del
+  // Vacío — with their real formatListMeta(card) strings and priceLabels, defaulting to Spanish
+  // (DEFAULT_LOCALE) with no <LocaleProvider> wrapping the render.
+  it("renders the section heading and all three SAMPLE_CARDS rows with their formatListMeta/priceLabel", () => {
     render(<RecentScansList />);
 
     expect(screen.getByText(scanCopy.es.recentScansHeading)).toBeTruthy();
-    expect(screen.getByText("Charizard")).toBeTruthy();
-    expect(screen.getByText("PSA 10 · GEN-001")).toBeTruthy();
-    expect(screen.getByText("$450.00")).toBeTruthy();
+    expect(SAMPLE_CARDS.length).toBe(3);
+
+    for (const card of SAMPLE_CARDS) {
+      expect(screen.getByTestId(`recent-scan-row-${card.id}`)).toBeTruthy();
+      expect(screen.getByText(card.name)).toBeTruthy();
+      expect(screen.getByText(formatListMeta(card))).toBeTruthy();
+      expect(screen.getByText(card.priceLabel)).toBeTruthy();
+    }
+  });
+
+  // FR-010: the old 006-visual-identity placeholder rows (unrelated to this feature's mockups)
+  // no longer render.
+  it("no longer renders 006-visual-identity's old Charizard/Blastoise/Venusaur placeholder rows", () => {
+    render(<RecentScansList />);
+
+    expect(screen.queryByText("Charizard")).toBeNull();
+    expect(screen.queryByText("Blastoise")).toBeNull();
+    expect(screen.queryByText("Venusaur")).toBeNull();
   });
 });

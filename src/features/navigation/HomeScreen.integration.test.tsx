@@ -1,29 +1,24 @@
-// T018 (specs/004-home-scan-shell): confirms AmigosQuickAccessPill (T008, rendered inside
-// HomeScreen, T013) and the shell's Amigos tab (app/(app)/amigos.tsx, T014, wired into the
-// native tab bar by app/(app)/_layout.tsx, T009) resolve to the *identical* destination — not
-// a lookalike duplicate — per FR-008 and spec.md US3 AS3.
+// T025 (specs/008-scan-experience): confirms HomeScreen's (Inicio) quick-action card and the
+// shell's Escanear tab (app/(app)/escanear.tsx, T019, wired into the native tab bar by
+// app/(app)/_layout.tsx, T009) resolve to the *identical* destination — not a lookalike
+// duplicate — per FR-013 and spec.md US5 AS2. This replaces 004-home-scan-shell's original
+// Amigos-pill-vs-Amigos-tab convergence test (the same shape, now applied to Inicio's
+// repurposed centre card and Escanear, since AmigosQuickAccessPill is retired outright by US6,
+// T031).
 //
 // Two things are asserted, both grounded in NAV_DESTINATIONS (src/domain/navigation.ts, T001)
 // so they cannot silently drift apart:
 //
-// 1. Route convergence: pressing the pill pushes to exactly NAV_DESTINATIONS' "amigos" entry's
-//    `route` ("/amigos") — the same string app/(app)/_layout.tsx's native <Tabs.Screen> derives
-//    its own Amigos tab's screen name from (screen name "amigos" <-> route segment "amigos" <->
-//    the sibling file app/(app)/amigos.tsx, by expo-router's own file-based-routing convention).
-//    If a future edit renamed the tab's screen name away from "amigos" without updating
-//    NAV_DESTINATIONS (or vice versa), this test fails.
-// 2. Screen convergence: app/(app)/amigos.tsx — the exact file expo-router mounts for the
-//    "amigos" tab/route, whichever entry point navigated there — renders the same output as
-//    AmigosPlaceholderScreen (src/features/social/AmigosPlaceholderScreen.tsx, T005) rendered
-//    directly, proving the route file is a pure pass-through and not a second, diverging
-//    placeholder.
-//
-// "The shell shows Amigos as active" (spec.md US3 AS3) itself is expo-router/react-navigation's
-// own built-in current-route handling — neither the pill nor the tab bar implements any custom
-// "active destination" logic of its own (see app/(app)/_layout.tsx, T009: no hand-rolled
-// isFocused/active styling), so once both entry points are proven to navigate to the exact same
-// route (assertion 1 below), the shell necessarily shows that one route's tab as active for
-// both — there is no separate "active state" code path in this codebase to test.
+// 1. Route convergence: pressing the quick-action card pushes to exactly NAV_DESTINATIONS'
+//    "escanear" entry's `route` ("/escanear") — the same string app/(app)/_layout.tsx's native
+//    <Tabs.Screen> derives its own Escanear tab's screen name from (screen name "escanear" <->
+//    route segment "escanear" <-> the sibling file app/(app)/escanear.tsx, by expo-router's own
+//    file-based-routing convention). If a future edit renamed the tab's screen name away from
+//    "escanear" without updating NAV_DESTINATIONS (or vice versa), this test fails.
+// 2. Screen convergence: app/(app)/escanear.tsx — the exact file expo-router mounts for the
+//    "escanear" tab/route, whichever entry point navigated there — renders the same title as
+//    ScanShellScreen (src/features/scanner/ScanShellScreen.tsx) rendered directly, proving the
+//    route file is a pure pass-through and not a second, diverging screen.
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 
@@ -38,71 +33,63 @@ jest.mock("expo-router", () => ({
   ),
 }));
 
-// T020 (specs/004-home-scan-shell): HomeScreen now calls useSafeAreaInsets() (a real-device
-// finding fixed this run — see progress/impl_004-home-scan-shell.md). Under react-test-renderer
-// there is no real SafeAreaProvider measurement, so any render of HomeScreen needs the library's
-// own official Jest mock (react-native-safe-area-context/jest/mock) or useSafeAreaInsets throws
-// "No safe area value available."
-jest.mock("react-native-safe-area-context", () =>
-  require("react-native-safe-area-context/jest/mock").default
-);
-
+import { homeCopy } from "@/domain/i18n/copy/home";
 import { NAV_DESTINATIONS } from "@/domain/navigation";
-import { AmigosPlaceholderScreen } from "@/features/social/AmigosPlaceholderScreen";
+import { ScanShellScreen } from "@/features/scanner/ScanShellScreen";
 
 import AppTabsLayout from "../../../app/(app)/_layout";
-import AmigosRouteScreen from "../../../app/(app)/amigos";
+import EscanearRouteScreen from "../../../app/(app)/escanear";
 import { HomeScreen } from "./HomeScreen";
 
-describe("Amigos pill vs. Amigos tab convergence (FR-008)", () => {
+describe("Inicio quick-action card vs. Escanear tab convergence (FR-013)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  const amigosDestination = NAV_DESTINATIONS.find((destination) => destination.key === "amigos");
+  const escanearDestination = NAV_DESTINATIONS.find((destination) => destination.key === "escanear");
 
-  it("has an Amigos entry in NAV_DESTINATIONS for both entry points to converge on", () => {
-    expect(amigosDestination).toBeDefined();
+  it("has an Escanear entry in NAV_DESTINATIONS for both entry points to converge on", () => {
+    expect(escanearDestination).toBeDefined();
   });
 
-  // FR-008: pressing the top-left pill — inside the real HomeScreen composition, not an
-  // isolated pill render — navigates to exactly NAV_DESTINATIONS' Amigos route.
-  it("navigates the pill to exactly NAV_DESTINATIONS' Amigos route", () => {
+  // FR-013: pressing the quick-action card — inside the real HomeScreen composition, not an
+  // isolated card render — navigates to exactly NAV_DESTINATIONS' Escanear route.
+  it("navigates the quick-action card to exactly NAV_DESTINATIONS' Escanear route", () => {
     render(<HomeScreen />);
 
-    fireEvent.press(screen.getByRole("button", { name: "Amigos" }));
+    fireEvent.press(screen.getByRole("button", { name: homeCopy.es.scanQuickActionLabel }));
 
     expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith(amigosDestination?.route);
+    expect(mockPush).toHaveBeenCalledWith(escanearDestination?.route);
   });
 
-  // Grounds the native shell's Amigos tab configuration (app/(app)/_layout.tsx, T009) in the
-  // exact same NAV_DESTINATIONS route the pill uses: the tab's screen name is expo-router's
-  // file-based-routing segment for that same route ("/amigos" <-> screen name "amigos" <->
-  // sibling file app/(app)/amigos.tsx). A future rename on either side without the other fails
-  // this test.
-  it("configures the native Amigos tab's screen name from the same NAV_DESTINATIONS route the pill uses", () => {
+  // Grounds the native shell's Escanear tab configuration (app/(app)/_layout.tsx, T009) in the
+  // exact same NAV_DESTINATIONS route the quick-action card uses: the tab's screen name is
+  // expo-router's file-based-routing segment for that same route ("/escanear" <-> screen name
+  // "escanear" <-> sibling file app/(app)/escanear.tsx). A future rename on either side without
+  // the other fails this test.
+  it("configures the native Escanear tab's screen name from the same NAV_DESTINATIONS route the quick-action card uses", () => {
     render(<AppTabsLayout />);
 
     const tabScreenNames = mockTabsScreen.mock.calls.map(([props]) => props.name);
-    const amigosRouteSegment = amigosDestination?.route.replace(/^\//, "");
+    const escanearRouteSegment = escanearDestination?.route.replace(/^\//, "");
 
-    expect(amigosRouteSegment).toBeTruthy();
-    expect(tabScreenNames).toContain(amigosRouteSegment);
+    expect(escanearRouteSegment).toBeTruthy();
+    expect(tabScreenNames).toContain(escanearRouteSegment);
   });
 
-  // Screen convergence: app/(app)/amigos.tsx — the literal file expo-router mounts for the
-  // "amigos" route/tab regardless of entry point — renders the same content as
-  // AmigosPlaceholderScreen rendered directly. Not a second, diverging placeholder screen.
-  it("renders the identical Amigos placeholder content whether reached via the route file or the component directly", () => {
-    const viaRoute = render(<AmigosRouteScreen />);
-    const viaRouteChildren = viaRoute.getByRole("header", { name: "Amigos" }).props.children;
+  // Screen convergence: app/(app)/escanear.tsx — the literal file expo-router mounts for the
+  // "escanear" route/tab regardless of entry point — renders the same title as ScanShellScreen
+  // rendered directly. Not a second, diverging screen.
+  it("renders the identical Escanear screen title whether reached via the route file or the component directly", () => {
+    const viaRoute = render(<EscanearRouteScreen />);
+    const viaRouteHeader = viaRoute.getByRole("header").props.children;
     viaRoute.unmount();
 
-    const direct = render(<AmigosPlaceholderScreen />);
-    const directChildren = direct.getByRole("header", { name: "Amigos" }).props.children;
+    const direct = render(<ScanShellScreen />);
+    const directHeader = direct.getByRole("header").props.children;
     direct.unmount();
 
-    expect(viaRouteChildren).toEqual(directChildren);
+    expect(viaRouteHeader).toEqual(directHeader);
   });
 });

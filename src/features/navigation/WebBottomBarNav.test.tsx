@@ -1,10 +1,13 @@
-// Covers FR-001 (all three NAV_DESTINATIONS reachable from the shell), FR-003 (the web bottom
-// bar treatment), SC-002 (every destination operable via keyboard alone), SC-003 (no
-// horizontal overflow at narrow web widths) per tasks.md T011 (specs/004-home-scan-shell).
-// Mocks expo-router's <Link>/<Slot> the same way WebSidebarNav.test.tsx does, per
-// docs/verification.md Level 2.
+// Covers FR-001 (all five NAV_DESTINATIONS reachable from the shell), FR-003 (the web bottom
+// bar treatment), FR-011 (ShellHeader's four icon controls render above the active screen),
+// FR-017/SC-006 (destination labels render through i18n and re-render in the active locale —
+// Round 2 review Finding 1, fixed here), SC-002 (every destination operable via keyboard alone),
+// SC-003 (no horizontal overflow at narrow web widths) per tasks.md T011
+// (specs/008-scan-experience). Mocks expo-router's <Link>/<Slot> the same way
+// WebSidebarNav.test.tsx does, per docs/verification.md Level 2.
 import React from "react";
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
+import { Pressable, StyleSheet, Text } from "react-native";
 
 jest.mock("expo-router", () => {
   const { Text } = require("react-native");
@@ -17,21 +20,84 @@ jest.mock("expo-router", () => {
   };
 });
 
-import { NAV_DESTINATIONS } from "@/domain/navigation";
+// ShellHeader (T008, rendered by WebBottomBarNav as of this task) calls useSafeAreaInsets() —
+// the library's own official Jest mock, same technique WebSidebarNav.test.tsx uses.
+jest.mock("react-native-safe-area-context", () =>
+  require("react-native-safe-area-context/jest/mock").default
+);
+
+import { NAV_DESTINATIONS, type NavDestinationKey } from "@/domain/navigation";
+import { navCopy } from "@/domain/i18n/copy/nav";
+import { LocaleProvider, useLocale } from "@/features/i18n/LocaleContext";
 
 import { WebBottomBarNav } from "./WebBottomBarNav";
 
+// Same key->navCopy label mapping WebBottomBarNav.tsx itself builds — used here only to assert
+// against, not imported from the component under test.
+const SPANISH_LABEL_BY_KEY: Record<NavDestinationKey, string> = {
+  inicio: navCopy.es.navInicio,
+  escanear: navCopy.es.navEscanear,
+  cartera: navCopy.es.navCartera,
+  trades: navCopy.es.navTrades,
+  perfil: navCopy.es.navPerfil,
+};
+
+const ENGLISH_LABEL_BY_KEY: Record<NavDestinationKey, string> = {
+  inicio: navCopy.en.navInicio,
+  escanear: navCopy.en.navEscanear,
+  cartera: navCopy.en.navCartera,
+  trades: navCopy.en.navTrades,
+  perfil: navCopy.en.navPerfil,
+};
+
+// Reuses the exact test-only "flip the locale" trigger pattern TopRightControls.test.tsx already
+// established.
+function LocaleSwitchTrigger() {
+  const { setLocale } = useLocale();
+  return (
+    <Pressable testID="switch-to-en" onPress={() => setLocale("en")} accessibilityRole="button">
+      <Text>switch</Text>
+    </Pressable>
+  );
+}
+
 describe("WebBottomBarNav", () => {
-  // FR-001, SC-002: all three destinations render as real, individually reachable links —
-  // the same three-destination coverage as WebSidebarNav.test.tsx (T010).
-  it("renders all three NAV_DESTINATIONS as links with correct roles and labels", () => {
+  // FR-001, SC-002: all five destinations render as real, individually reachable links — the
+  // same five-destination coverage as WebSidebarNav.test.tsx (T010).
+  it("renders all five NAV_DESTINATIONS as links with correct roles and labels", () => {
     render(<WebBottomBarNav />);
 
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(NAV_DESTINATIONS.length);
+    expect(NAV_DESTINATIONS.length).toBe(5);
 
     NAV_DESTINATIONS.forEach((destination) => {
-      expect(screen.getByRole("link", { name: destination.label })).toBeTruthy();
+      expect(
+        screen.getByRole("link", { name: SPANISH_LABEL_BY_KEY[destination.key] })
+      ).toBeTruthy();
+    });
+  });
+
+  // FR-017, SC-006 (Round 2 review Finding 1): destination labels MUST re-render in the active
+  // locale — this genuinely fails without routing labels through useTranslation(navCopy), since
+  // NAV_DESTINATIONS itself carries no label field to fall back on.
+  it("re-renders the destination labels in English when the locale context switches to 'en'", () => {
+    render(
+      <LocaleProvider>
+        <LocaleSwitchTrigger />
+        <WebBottomBarNav />
+      </LocaleProvider>
+    );
+
+    // Sanity check: Spanish by default, before the switch.
+    expect(screen.getByRole("link", { name: navCopy.es.navInicio })).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("switch-to-en"));
+
+    NAV_DESTINATIONS.forEach((destination) => {
+      expect(
+        screen.getByRole("link", { name: ENGLISH_LABEL_BY_KEY[destination.key] })
+      ).toBeTruthy();
     });
   });
 
@@ -44,6 +110,26 @@ describe("WebBottomBarNav", () => {
     links.forEach((link) => {
       expect(link.props.accessibilityState?.disabled).not.toBe(true);
     });
+  });
+
+  // T033 (accessibility pass, Constitution VII): every destination link keeps a minimum 44x44
+  // tap target, the same assertion technique TopRightControls.test.tsx already established.
+  it("gives each destination link a minimum 44x44 tap target", () => {
+    render(<WebBottomBarNav />);
+
+    screen.getAllByRole("link").forEach((link) => {
+      const style = StyleSheet.flatten(link.props.style);
+      expect(style.minWidth).toBeGreaterThanOrEqual(44);
+      expect(style.minHeight).toBeGreaterThanOrEqual(44);
+    });
+  });
+
+  // FR-011: ShellHeader's four icon controls render above the active screen's Slot.
+  it("renders ShellHeader's four controls above the active screen's Slot", () => {
+    render(<WebBottomBarNav />);
+
+    expect(screen.getByTestId("shell-header")).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(4);
   });
 
   // FR-003: wraps the active screen via expo-router's <Slot />.

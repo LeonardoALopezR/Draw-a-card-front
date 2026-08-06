@@ -38,4 +38,30 @@ describe("ScanEntryCard", () => {
 
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  // FR-013 (specs/008-scan-experience, code review Round 7 Finding 1): the optional `label`
+  // override, added for Inicio's repurposed quick-action card. Absent, this component's
+  // behavior must stay byte-for-byte unchanged (004-era shared code, other/future callers must
+  // not be disturbed) — no visible text, bare "Scan a card" accessibility label, same as above.
+  it("renders no visible text and keeps the default accessibility label when the label prop is omitted", () => {
+    const { getByTestId, queryByText, getByRole } = render(<ScanEntryCard onPress={jest.fn()} />);
+
+    expect(queryByText("Escanear una carta")).toBeNull();
+    expect(getByRole("button", { name: "Scan a card" })).toBeTruthy();
+    expect(getByTestId("scan-entry-card")).toBeTruthy();
+  });
+
+  // FR-013: when a label is provided, it renders as visible text alongside the "+" glyph (the
+  // card must "read" the label, per spec.md Clarifications' Recorded default 1 — not just carry
+  // it as an accessibility-only string) and becomes the accessible name too, so the announced
+  // name matches the visible text exactly.
+  it("renders the provided label as visible text and uses it as the accessibility label", () => {
+    const { getByText, getByRole } = render(
+      <ScanEntryCard onPress={jest.fn()} label="Escanear una carta" />
+    );
+
+    expect(getByText("+")).toBeTruthy();
+    expect(getByText("Escanear una carta")).toBeTruthy();
+    expect(getByRole("button", { name: "Escanear una carta" })).toBeTruthy();
+  });
 });
