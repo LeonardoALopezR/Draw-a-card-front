@@ -938,3 +938,88 @@ row updated to distinguish what T019 vs T035 each satisfy.
 ## Next step
 
 - Feature is `done`. No next step for `005-login` itself. Follow-ups worth a human decision, not auto-spawned: (a) the live-Supabase manual pass for reset-with-code above, (b) the Supabase dashboard email-template configuration reminder above, (c) a real iOS Simulator pass once Xcode is selected on this machine (`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`), (d) a real Android verification pass once an emulator/SDK is available.
+
+---
+
+## Session 2026-08-05 — 008-scan-experience (spec → implementation → done)
+
+**Feature**: `008-scan-experience` — rebuild the Escanear view to match four supplied mockups,
+replace the navigation shell, add the four top-right icon controls, and redesign
+`004-home-scan-shell`'s landing view as the post-login Inicio screen.
+
+**Outcome**: `done`. 38 task checkboxes (T001–T037 plus T020a) `[X]`, 9 code-reviewer rounds,
+`./init.sh RESULT: SUCCESS`, tsc clean, 476/476 tests across 72 suites.
+
+### How it ran
+
+Branch `008-scan-experience` cut from `main` at `c581aca` (after 006-visual-identity's PR #4
+merged). Implemented in seven delegated batches, each independently reviewed before the next
+started:
+
+| Batch | Tasks | Outcome |
+|---|---|---|
+| 1 | T001–T006 (domain + i18n) | APPROVED, zero nits |
+| 2 | T007–T012 (shell chrome) | CHANGES_REQUESTED → fixed → APPROVED |
+| 3 | T013–T014 (found-state hook + shared panel) | APPROVED |
+| 4 | T015–T020 (mobile Escanear) | APPROVED |
+| 5 | T020a (AS4 fix) + T021–T024 (web Escanear) | APPROVED |
+| 6 | T025–T032 (Inicio, placeholders, retirement) | CHANGES_REQUESTED → fixed → APPROVED |
+| 7 | T033–T037 (polish, regression, init.sh) | APPROVED |
+
+### Decisions the human made
+
+- At the `spec_ready` gate: both of spec.md's recorded defaults confirmed — Inicio content
+  Option A, and Amigos/Social retired outright rather than orphaned.
+- Four scope decisions settled before the spec was written: five destinations replacing three;
+  web gets no camera scanner (a deliberate deviation from the supplied web mockup); the found-card
+  panel ships as inert UI on mock data; the four icon controls live shell-wide, not on Inicio.
+- Mid-implementation: shown code-reviewer's honest assessment that the shipped "MX"/"US" lime
+  chips read as abbreviation badges rather than flags, the human chose hand-drawn flag shapes in
+  real national colors — still no new dependency, no asset, no emoji.
+
+### Two blocking findings, both caught by review rather than by tests
+
+1. **Round 2** — the five destination labels rendered as hardcoded Spanish from
+   `NAV_DESTINATIONS` in all three nav renderers, leaving `navCopy`'s English keys dead. A locale
+   switch would have left tab and sidebar names Spanish permanently. Fixed by deleting the
+   `label` field from `NavDestination` outright, so no render-ready hardcoded string survives to
+   be rendered by mistake.
+2. **Round 7** — Inicio's quick-action card rendered a bare "+" with a hardcoded English
+   accessibility label instead of the "Escanear una carta" the human-confirmed default names.
+
+**Pattern worth carrying forward**: code-reviewer caught the same "half-updated leftover" class
+four separate times (`backLabel` orphaned keys, `navigation/README.md` describing deleted screens,
+`scanQuickActionLabel`, `social/README.md`). Deletions and renames in this repo reliably leave
+debris that type-checking and tests do not see. Sweep for it deliberately.
+
+**Gap in `tasks.md` itself**: spec.md User Story 3 AS4 ("navigate away and back resets to idle")
+was owned by no task — T018's traceability cites AS1–AS3 only. The implementer found it while
+preparing a smoke check, disclosed it rather than absorbing it, and it was closed as T020a
+(`unmountOnBlur: true` scoped to the Escanear tab). Accepted side effect: the whole screen subtree
+remounts on tab-blur, so scroll position and any future local state on that screen also reset.
+
+### Verification — stated precisely, not generously
+
+Every destination this feature ships sits behind the KYC gate, and `.env` has empty
+`EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`, so `resolveKycRoute()` returns
+`unauthenticated` and every authenticated route redirects to `/login`. **Nothing this feature
+ships has ever been seen rendering on a real browser, simulator, or device.** A temporary
+uncommitted gate-bypass probe was attempted to screenshot the real DOM; browser navigation and JS
+execution were both blocked by a permission classifier, and the probe was reverted (`app/_layout.tsx`
+confirmed at an empty diff). The four manual-smoke tasks and the a11y/responsive passes are marked
+`[X]` on their statically verifiable parts only. No screen reader was run, no real tap target
+measured, no viewport really resized. Android was never available.
+
+This is the same gap that let `006-visual-identity`'s `/scan` shell ship on component tests alone,
+and it is exactly how `004-home-scan-shell`'s two runtime-only bugs were caught — by a real device
+and by nothing else. **A screen-by-screen hand-off list is in
+`progress/review_008-scan-experience.md` §7 of the final round.**
+
+Three standing invariants were re-verified independently by the orchestrator, not merely relayed:
+no live camera import under `src/features/scanner/`; empty `git diff main` on the three KYC-gate
+files (FR-014 held); no live import of any retired Amigos/Social component.
+
+### State at session close
+
+Work sits **uncommitted** on branch `008-scan-experience`. Nothing was committed or pushed, and no
+PR was opened — left at the human's discretion.

@@ -1,97 +1,108 @@
-// Covers FR-004 (centre "+" card), FR-005 (T016 — "+" card navigates to exactly SCAN_ROUTE),
-// FR-006 (top-right four-control stack), and FR-008 (top-left Amigos pill) for HomeScreen
-// (specs/004-home-scan-shell, T013/T016) — asserts all three composed pieces render with their
-// expected roles/labels, that the composition is structurally correct per the wireframe
-// (top-left Amigos pill, top-right controls stack, centre scan card), and that pressing the
-// scan card navigates to exactly SCAN_ROUTE (US2 AS1). Exact pixel-position assertion isn't
-// meaningful in RNTL (docs/verification.md), so this checks containment (`within` each named
-// container) and overall render order in the tree instead. Mocks expo-router's `useRouter` with
-// a single shared, resettable `mockPush`, mirroring AmigosQuickAccessPill.test.tsx (T008)'s
-// established pattern, since both AmigosQuickAccessPill and (as of T016) HomeScreen itself call
-// `useRouter().push` directly.
+// Covers FR-013 (Inicio's redesigned content — BrandMark, display.xl title, tagline, and the
+// repurposed quick-action card, spec.md Clarifications' Recorded default 1) for HomeScreen
+// (specs/008-scan-experience, T025) — asserts the new brand block renders, that
+// AmigosQuickAccessPill/TopRightControls no longer render from this file (both retired/moved
+// elsewhere per US1/US6), and that pressing the quick-action card navigates to exactly
+// NAV_DESTINATIONS' "escanear" route (spec.md US5 AS2), not a hardcoded route string. Mocks
+// expo-router's `useRouter` with a single shared, resettable `mockPush`, mirroring
+// AmigosQuickAccessPill.test.tsx's established pattern (HomeScreen itself now owns the
+// escanear-lookup-and-push logic previously exercised only by that retired component).
+//
+// FR-017 / code review Round 7 Finding 1: also covers the quick-action card's own localized
+// label ("Escanear una carta" / "Scan a card") in both locales, mirroring
+// TopRightControls.test.tsx's established LocaleProvider + LocaleSwitchTrigger pattern — this is
+// the exact test that would have caught the card shipping with a hardcoded English label.
 import React from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react-native";
-import { ScrollView, StyleSheet } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Pressable, ScrollView, Text } from "react-native";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
-// T020 (specs/004-home-scan-shell): HomeScreen now calls useSafeAreaInsets() (a real-device
-// finding fixed this run — see progress/impl_004-home-scan-shell.md). Under react-test-renderer
-// there is no real SafeAreaProvider measurement, so any render of HomeScreen needs the library's
-// own official Jest mock (react-native-safe-area-context/jest/mock) or useSafeAreaInsets throws
-// "No safe area value available." — its mocked SafeAreaProvider still honours `initialMetrics`
-// (used below), and its mocked useSafeAreaInsets falls back to zero insets for every render that
-// doesn't wrap in one.
-jest.mock("react-native-safe-area-context", () =>
-  require("react-native-safe-area-context/jest/mock").default
-);
-
-import { SCAN_ROUTE } from "@/domain/navigation";
+import { homeCopy } from "@/domain/i18n/copy/home";
+import { NAV_DESTINATIONS } from "@/domain/navigation";
+import { LocaleProvider, useLocale } from "@/features/i18n/LocaleContext";
 
 import { HomeScreen } from "./HomeScreen";
 
-describe("HomeScreen", () => {
+// Reuses the exact test-only "flip the locale" trigger pattern already established by
+// TopRightControls.test.tsx / src/features/i18n/LocaleContext.test.tsx.
+function LocaleSwitchTrigger() {
+  const { setLocale } = useLocale();
+  return (
+    <Pressable testID="switch-to-en" onPress={() => setLocale("en")} accessibilityRole="button">
+      <Text>switch</Text>
+    </Pressable>
+  );
+}
+
+describe("HomeScreen (Inicio)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  // FR-008: the Amigos quick-access pill renders inside the top-left region.
-  it("renders the Amigos quick-access pill top-left", () => {
+  // FR-013: the BrandMark + display.xl title + tagline render inside the brand block, per
+  // spec.md Clarifications' Recorded default 1 (Option A).
+  it("renders the BrandMark, title, and tagline in the brand block", () => {
     render(<HomeScreen />);
 
-    const topLeft = within(screen.getByTestId("home-screen-top-left"));
-    expect(topLeft.getByRole("button", { name: "Amigos" })).toBeTruthy();
+    const brandBlock = within(screen.getByTestId("home-screen-brand-block"));
+    expect(brandBlock.getByLabelText("Draw a Card")).toBeTruthy();
+    expect(brandBlock.getByRole("header", { name: "Inicio" })).toBeTruthy();
+    expect(brandBlock.getByText("Tu colección, siempre a la mano")).toBeTruthy();
   });
 
-  // FR-006: all four top-right placeholder controls render inside the top-right region.
-  it("renders the four top-right placeholder controls top-right", () => {
-    render(<HomeScreen />);
-
-    const topRight = within(screen.getByTestId("home-screen-top-right"));
-    expect(topRight.getAllByRole("button")).toHaveLength(4);
-  });
-
-  // FR-004: the centre "+" scan card renders inside the centre region, with its real
-  // accessibility label (not a bare "+"/"button").
-  it("renders the scan entry card dead centre", () => {
-    render(<HomeScreen />);
-
-    const centre = within(screen.getByTestId("home-screen-centre"));
-    expect(centre.getByRole("button", { name: "Scan a card" })).toBeTruthy();
-  });
-
-  // Structural check (not pixel-perfect): the Amigos pill, the four top-right controls, and
-  // the scan card appear in that render order in the tree — matching the wireframe's top-left /
-  // top-right / centre layout, since the top row (containing top-left then top-right) renders
-  // before the centre row in HomeScreen's JSX.
-  it("renders the Amigos pill, then the top-right controls, then the scan card, in that order", () => {
+  // FR-013/US1: AmigosQuickAccessPill and TopRightControls are both retired from this file —
+  // AmigosQuickAccessPill outright (US6), TopRightControls moved to the shared ShellHeader
+  // (US1) — so HomeScreen itself now renders exactly one button (the quick-action card).
+  it("no longer renders the Amigos pill or the top-right controls from this file", () => {
     render(<HomeScreen />);
 
     const buttons = screen.getAllByRole("button");
-    const labels = buttons.map((button) => button.props.accessibilityLabel);
-
-    expect(labels).toEqual([
-      "Amigos",
-      "Language, English or Spanish — not yet available",
-      "Currency, US Dollar or Mexican Peso — not yet available",
-      "Notifications — not yet available",
-      "Messages — not yet available",
-      "Scan a card",
-    ]);
+    expect(buttons).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Amigos" })).toBeNull();
   });
 
-  // T020/T021 regression guard, spec.md Edge Cases ("the [top-right] stack may scroll
-  // independently... it must never overlap or obscure the centre '+' card affordance"): real-
-  // browser verification (progress/impl_004-home-scan-shell.md) found that a plain `flex: 1`
-  // View clipped the fixed-height scan card against the viewport with no way to recover it on
-  // a short/narrow landscape-phone viewport, since Expo's web output sets `body { overflow:
-  // hidden }`. HomeScreen's root must stay a ScrollView (not a plain View) so the whole screen
-  // — not just the top-right stack — can scroll independently instead of permanently clipping
-  // the centre card when it doesn't fit.
+  // FR-004/FR-013 (code review Round 7 Finding 1 fix): the centre "+" scan card still renders
+  // inside the centre region, and now both shows its localized text ("Escanear una carta",
+  // homeCopy.es.scanQuickActionLabel — Recorded default 1's exact wording) and exposes that same
+  // string as its accessible name, defaulting to Spanish (DEFAULT_LOCALE) with no
+  // <LocaleProvider> wrapping the render — the same bare-render-defaults-to-es convention every
+  // other i18n'd component test in this repo uses.
+  it("renders the scan entry card dead centre with its localized visible text and accessibility label", () => {
+    render(<HomeScreen />);
+
+    const centre = within(screen.getByTestId("home-screen-centre"));
+    expect(centre.getByText(homeCopy.es.scanQuickActionLabel)).toBeTruthy();
+    expect(centre.getByRole("button", { name: homeCopy.es.scanQuickActionLabel })).toBeTruthy();
+  });
+
+  // FR-017 / code review Round 7 Finding 1: switching the locale context to "en" (the exact
+  // seam 007-localization's future picker calls) re-renders the quick-action card's visible text
+  // and accessibility label in English — this is the test that would have caught the card
+  // shipping with a hardcoded "Scan a card" regardless of locale.
+  it("renders the quick-action card's English label when the locale context is set to 'en'", () => {
+    render(
+      <LocaleProvider>
+        <LocaleSwitchTrigger />
+        <HomeScreen />
+      </LocaleProvider>
+    );
+
+    // Sanity check: Spanish by default, before the switch.
+    expect(screen.getByText(homeCopy.es.scanQuickActionLabel)).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("switch-to-en"));
+
+    expect(screen.getByText(homeCopy.en.scanQuickActionLabel)).toBeTruthy();
+    expect(screen.getByRole("button", { name: homeCopy.en.scanQuickActionLabel })).toBeTruthy();
+    expect(screen.queryByText(homeCopy.es.scanQuickActionLabel)).toBeNull();
+  });
+
+  // T020/T021 regression guard (unchanged from 004-home-scan-shell): the screen must stay
+  // scrollable, not clipped, on a short viewport.
   it("wraps its content in a ScrollView so the screen can scroll independently on a short viewport", () => {
     render(<HomeScreen />);
 
@@ -99,43 +110,18 @@ describe("HomeScreen", () => {
     expect(scrollView.props.testID).toBe("home-screen");
   });
 
-  // T020 regression guard: a real-device screenshot (iPhone 17 Pro Simulator, Dynamic Island —
-  // see progress/impl_004-home-scan-shell.md) found the top-left Amigos pill and top-right
-  // controls rendering directly underneath the system status bar/notch, since this screen has
-  // no header (native <Tabs> uses screenOptions={{ headerShown: false }}) to reserve that space
-  // itself. Renders inside a SafeAreaProvider with a non-zero top/left/right inset (the mocked
-  // SafeAreaProvider above honours `initialMetrics` for exactly this) and asserts the top row's
-  // flattened padding actually incorporates each inset, not just the original hardcoded 16.
-  it("pads the top row by the device's safe-area insets, not just a fixed 16px", () => {
-    render(
-      <SafeAreaProvider
-        initialMetrics={{
-          frame: { x: 0, y: 0, width: 400, height: 800 },
-          insets: { top: 47, left: 10, right: 12, bottom: 0 },
-        }}
-      >
-        <HomeScreen />
-      </SafeAreaProvider>
-    );
-
-    const topRow = screen.getByTestId("home-screen-top-row");
-    const flatStyle = StyleSheet.flatten(topRow.props.style);
-
-    expect(flatStyle.paddingTop).toBe(16 + 47);
-    expect(flatStyle.paddingLeft).toBe(16 + 10);
-    expect(flatStyle.paddingRight).toBe(16 + 12);
-  });
-
-  // T016, FR-005, spec.md US2 AS1: pressing the "+" card navigates to exactly SCAN_ROUTE
-  // (src/domain/navigation.ts) — not a hardcoded "/scan" literal in either this component or
-  // this test. Located the same way a screen reader would (T017, SC-002/SC-004): by accessible
-  // role + name, not by icon or testID.
-  it("navigates to exactly SCAN_ROUTE when the scan card is pressed", () => {
+  // FR-013, spec.md US5 AS2: pressing the quick-action card navigates to exactly
+  // NAV_DESTINATIONS' "escanear" route — not a hardcoded "/escanear" literal in either this
+  // component or this test.
+  it("navigates to exactly NAV_DESTINATIONS' escanear route when the quick-action card is pressed", () => {
     render(<HomeScreen />);
 
-    fireEvent.press(screen.getByRole("button", { name: "Scan a card" }));
+    const escanearDestination = NAV_DESTINATIONS.find((destination) => destination.key === "escanear");
+    expect(escanearDestination).toBeDefined();
+
+    fireEvent.press(screen.getByRole("button", { name: homeCopy.es.scanQuickActionLabel }));
 
     expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith(SCAN_ROUTE);
+    expect(mockPush).toHaveBeenCalledWith(escanearDestination?.route);
   });
 });

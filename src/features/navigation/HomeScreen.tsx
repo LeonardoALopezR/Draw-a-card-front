@@ -1,27 +1,36 @@
 import { useRouter } from "expo-router";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { SCAN_ROUTE } from "@/domain/navigation";
+import { homeCopy } from "@/domain/i18n/copy/home";
+import { NAV_DESTINATIONS } from "@/domain/navigation";
+import { useTranslation } from "@/features/i18n/LocaleContext";
 import { ScanEntryCard } from "@/features/scanner/ScanEntryCard";
+import { BrandMark } from "@/features/ui/BrandMark";
+import { colors, space, typography } from "@/theme";
 
-import { AmigosQuickAccessPill } from "./AmigosQuickAccessPill";
-import { TopRightControls } from "./TopRightControls";
-
-// T013 (specs/004-home-scan-shell): the Home/Scan screen itself — composes
-// AmigosQuickAccessPill (T008, top-left), TopRightControls (T007, top-right vertical stack),
-// and ScanEntryCard (T003, dead centre) per the wireframe's layout (FR-004, FR-006, FR-008).
-// This component only renders those already-tested pieces (Constitution IV — no business logic
-// here). T016 (User Story 2): ScanEntryCard's onPress now navigates to SCAN_ROUTE
-// (src/domain/navigation.ts, the shared route table — not a hardcoded "/scan" literal, so this
-// can never drift from app/scan.tsx's own route) via expo-router's useRouter().push, mirroring
-// AmigosQuickAccessPill's own established push-from-shared-table pattern.
+// T025 (specs/008-scan-experience, FR-013, spec.md Clarifications' Recorded default 1 — Option
+// A, confirmed by the human at the approval gate): Inicio's redesigned content. This is no
+// longer the screen that owns AmigosQuickAccessPill (retired outright, US6) or TopRightControls
+// (now rendered once, shell-wide, by ShellHeader — T008/US1) — this screen renders only its own
+// content: a BrandMark + display.xl title + tagline (006-visual-identity's visual language,
+// useTranslation(homeCopy), T004), above the existing centre ScanEntryCard (T003,
+// 004-home-scan-shell) — reading homeCopy's localized "Escanear una carta"/"Scan a card" via
+// ScanEntryCard's optional `label` prop (code review Round 7 Finding 1 fix), so the card's
+// visible text and accessible name are both localized, not just the rest of the screen. No
+// user-specific data (name, balance, recent activity) is rendered — none of that exists in this
+// app yet (Recorded default 1).
 export function HomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const t = useTranslation(homeCopy);
 
+  // FR-013/spec.md US5 AS2: navigates via NAV_DESTINATIONS' "escanear" entry — never a
+  // hardcoded route string — mirroring the exact lookup pattern AmigosQuickAccessPill used for
+  // "amigos" before this feature retired that component (US6, T031).
   const handleScanEntryPress = () => {
-    router.push(SCAN_ROUTE);
+    const escanearDestination = NAV_DESTINATIONS.find((destination) => destination.key === "escanear");
+    if (escanearDestination) {
+      router.push(escanearDestination.route);
+    }
   };
 
   return (
@@ -38,29 +47,15 @@ export function HomeScreen() {
       contentContainerStyle={styles.container}
       testID="home-screen"
     >
-      <View
-        testID="home-screen-top-row"
-        style={[
-          styles.topRow,
-          // T020 fix: a real-device screenshot (iPhone 17 Pro Simulator, Dynamic Island) found
-          // the top-left Amigos pill and the top-right controls rendering directly under the
-          // system status bar/notch — a plain padding:16 (unchanged since before this fix) has
-          // no notion of the device's safe area, since this screen has no header
-          // (screenOptions={{ headerShown: false }} on the native <Tabs>) to reserve that space
-          // itself. useSafeAreaInsets() (react-native-safe-area-context, already a project
-          // dependency per plan.md — no new one added) is 0 on web, so this is a no-op there.
-          { paddingTop: 16 + insets.top, paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right },
-        ]}
-      >
-        <View style={styles.topLeft} testID="home-screen-top-left">
-          <AmigosQuickAccessPill />
-        </View>
-        <View style={styles.topRight} testID="home-screen-top-right">
-          <TopRightControls />
-        </View>
+      <View style={styles.brandBlock} testID="home-screen-brand-block">
+        <BrandMark size={72} />
+        <Text style={styles.title} accessibilityRole="header">
+          {t("title")}
+        </Text>
+        <Text style={styles.tagline}>{t("tagline")}</Text>
       </View>
       <View style={styles.centre} testID="home-screen-centre">
-        <ScanEntryCard onPress={handleScanEntryPress} />
+        <ScanEntryCard onPress={handleScanEntryPress} label={t("scanQuickActionLabel")} />
       </View>
     </ScrollView>
   );
@@ -73,18 +68,29 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
   },
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingBottom: 16,
+  brandBlock: {
+    alignItems: "center",
+    gap: space.sm,
+    paddingTop: space.xxl,
+    paddingHorizontal: space.lg,
   },
-  topLeft: {},
-  topRight: {},
+  title: {
+    fontSize: typography.display.xl.fontSize,
+    fontWeight: typography.display.xl.fontWeight,
+    fontFamily: typography.display.xl.fontFamily,
+    color: colors.text.primary,
+    textAlign: "center",
+  },
+  tagline: {
+    fontSize: typography.body.tagline.fontSize,
+    fontWeight: typography.body.tagline.fontWeight,
+    color: typography.body.tagline.color,
+    textAlign: "center",
+  },
   centre: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 16,
+    paddingVertical: space.xl,
   },
 });

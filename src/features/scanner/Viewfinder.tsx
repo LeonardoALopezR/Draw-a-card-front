@@ -6,6 +6,13 @@
 // restated here since this is the component most at risk of accidentally reaching for
 // expo-camera). The camera glyph below is a static icon from @expo/vector-icons, not a live
 // preview of any kind.
+//
+// specs/008-scan-experience/tasks.md T015 (US3, FR-004): a `state: "idle" | "found"` prop
+// (default "idle"). "found" swaps the grid/brackets/camera-glyph/hint for a glowing horizontal
+// brand.primary scan line, a check glyph, and the "¡Carta encontrada!" heading — the gear chip
+// is unchanged in both states. The found-state visuals are still plain View/Text/Icon drawing —
+// zero camera-module import, same as idle (this state is reachable only via
+// useScanSimulation()'s local trigger, never a real camera/recognition pipeline, FR-016).
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 
@@ -59,33 +66,50 @@ const CORNER_BRACKET_BARS: ViewStyle[] = [
   },
 ];
 
-export function Viewfinder() {
+export interface ViewfinderProps {
+  readonly state?: "idle" | "found";
+}
+
+export function Viewfinder({ state = "idle" }: ViewfinderProps) {
   const t = useTranslation(scanCopy);
+  const isFound = state === "found";
 
   return (
     <View style={styles.frame} testID="viewfinder">
-      {GRID_DIVIDER_FRACTIONS.map((fraction) => (
-        <View
-          key={`grid-v-${fraction}`}
-          style={[styles.gridLineVertical, { left: `${fraction * 100}%` }]}
-        />
-      ))}
-      {GRID_DIVIDER_FRACTIONS.map((fraction) => (
-        <View
-          key={`grid-h-${fraction}`}
-          style={[styles.gridLineHorizontal, { top: `${fraction * 100}%` }]}
-        />
-      ))}
+      {isFound ? (
+        <View style={styles.center} pointerEvents="none" testID="viewfinder-found">
+          {/* Glowing horizontal scan line (spec.md User Story 3 AS2) — brand.primary fill with a
+              matching shadow to read as "glowing" without a new asset/animation dependency. */}
+          <View style={styles.scanLine} />
+          <Ionicons name="checkmark-circle" size={40} color={colors.brand.primary} />
+          <Text style={styles.foundHeading}>{t("viewfinderFoundHeading")}</Text>
+        </View>
+      ) : (
+        <>
+          {GRID_DIVIDER_FRACTIONS.map((fraction) => (
+            <View
+              key={`grid-v-${fraction}`}
+              style={[styles.gridLineVertical, { left: `${fraction * 100}%` }]}
+            />
+          ))}
+          {GRID_DIVIDER_FRACTIONS.map((fraction) => (
+            <View
+              key={`grid-h-${fraction}`}
+              style={[styles.gridLineHorizontal, { top: `${fraction * 100}%` }]}
+            />
+          ))}
 
-      {CORNER_BRACKET_BARS.map((barStyle, index) => (
-        // eslint-disable-next-line react/no-array-index-key -- static, never reordered
-        <View key={index} style={[styles.absolute, styles.bracketBar, barStyle]} />
-      ))}
+          {CORNER_BRACKET_BARS.map((barStyle, index) => (
+            // eslint-disable-next-line react/no-array-index-key -- static, never reordered
+            <View key={index} style={[styles.absolute, styles.bracketBar, barStyle]} />
+          ))}
 
-      <View style={styles.center} pointerEvents="none">
-        <Ionicons name="camera-outline" size={40} color={colors.viewfinder.hintText} />
-        <Text style={styles.hint}>{t("viewfinderHint")}</Text>
-      </View>
+          <View style={styles.center} pointerEvents="none">
+            <Ionicons name="camera-outline" size={40} color={colors.viewfinder.hintText} />
+            <Text style={styles.hint}>{t("viewfinderHint")}</Text>
+          </View>
+        </>
+      )}
 
       {/* Decorative-only — pressing it does nothing in this feature (spec.md US3 AS4), so it's
           hidden from the accessibility tree entirely rather than exposed with a role it can't
@@ -143,6 +167,29 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.viewfinder.hintText,
     fontSize: 14,
+    textAlign: "center",
+  },
+  // T015 (found state): a wide, thin brand.primary bar with a colored shadow to read as
+  // "glowing" — same shadowRaised-style technique (colored shadow, no blur library) this repo
+  // already uses elsewhere rather than reaching for a new animation/glow dependency.
+  scanLine: {
+    position: "absolute",
+    top: "45%",
+    left: "10%",
+    right: "10%",
+    height: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand.primary,
+    shadowColor: colors.brand.primary,
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  foundHeading: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: "700",
     textAlign: "center",
   },
   gearChip: {

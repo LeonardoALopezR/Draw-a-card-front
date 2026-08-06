@@ -1,60 +1,23 @@
 // T042 (specs/006-visual-identity, FR-008): the scan screen's "recent scans" list (brief §5.2,
-// right column, below EmptyResultsPanel). Web-only in practice — rendered exclusively from
-// ScanShellScreen.web.tsx's two/one-column composition (a later task).
+// right column, below EmptyResultsPanel/FoundCardPanel). Web-only in practice — rendered
+// exclusively from ScanShellScreen.web.tsx's two/one-column composition.
 //
-// *** PLACEHOLDER-UNTIL-THE-REAL-SCANNER-FEATURE-SHIPS ***
-// PLACEHOLDER_ROWS below is STATIC, LOCAL, HAND-TYPED placeholder content — it is NOT real scan
-// history, is NOT fetched from src/domain or any backend endpoint, and is NOT persisted
-// anywhere. It exists purely so the two-column web layout reads correctly with something in it
-// (spec.md FR-008, US3 AS6). FR-008's own text is "no src/domain fetch, no API call, no
-// persistence" — this file's only src/domain import is the static i18n copy dictionary
-// (`@/domain/i18n/copy/scan`, required by FR-010 so the "ESCANEOS RECIENTES" heading isn't
-// hardcoded), never `@/domain/api-client` or any data-fetching module. This file MUST NOT gain
-// an api-client import or a fetch/network call of any kind until a real scanner feature
-// replaces PLACEHOLDER_ROWS (and likely this component's entire data source) with a genuine
-// query — that is explicitly out of scope here.
+// specs/008-scan-experience/tasks.md T022 (US4, FR-010): the local, hand-typed `PLACEHOLDER_ROWS`
+// array (006-visual-identity's unrelated Charizard/Blastoise/Venusaur set) is replaced by
+// `SAMPLE_CARDS` (src/domain/scanResults.ts, T002) + `formatListMeta(card)` per row — this is now
+// the SAME single source of truth `useScanSimulation.ts`'s found-card trigger and
+// `FoundCardPanel.tsx` already read from (plan.md's "Sample-card pool" Research Decision), not a
+// second, independently-typed card list that could drift from it. `SAMPLE_CARDS` is still static,
+// compiled-in fixture data (spec.md FR-010) — this file's only `@/domain` imports remain the
+// static i18n copy dictionary and this one data module; neither is a fetch/API call, and this file
+// MUST NOT gain an `@/domain/api-client` import or a fetch/network call until a real scanner
+// feature replaces `SAMPLE_CARDS` with a genuine query.
 import { StyleSheet, Text, View } from "react-native";
 
 import { scanCopy } from "@/domain/i18n/copy/scan";
+import { formatListMeta, SAMPLE_CARDS } from "@/domain/scanResults";
 import { useTranslation } from "@/features/i18n/LocaleContext";
 import { colors, radius, shadowSurface, space, typography } from "@/theme";
-
-interface PlaceholderScanRow {
-  id: string;
-  name: string;
-  meta: string;
-  price: string;
-  // Reuses existing theme color tokens for the placeholder thumbnail swatch (never a raw hex
-  // literal, per FR-001) — src/theme has no dedicated "thumbnail swatch" token category, so this
-  // cycles through a few visually distinct, already-defined semantic colors.
-  thumbnailColor: string;
-}
-
-// See the file-level PLACEHOLDER-UNTIL-THE-REAL-SCANNER-FEATURE-SHIPS note above (FR-008) — this
-// array is hand-typed placeholder data, not real scan results.
-const PLACEHOLDER_ROWS: PlaceholderScanRow[] = [
-  {
-    id: "1",
-    name: "Charizard",
-    meta: "PSA 10 · GEN-001",
-    price: "$450.00",
-    thumbnailColor: colors.brand.primary,
-  },
-  {
-    id: "2",
-    name: "Blastoise",
-    meta: "PSA 9 · GEN-009",
-    price: "$210.00",
-    thumbnailColor: colors.accent.priceGreen,
-  },
-  {
-    id: "3",
-    name: "Venusaur",
-    meta: "PSA 9 · GEN-003",
-    price: "$180.00",
-    thumbnailColor: colors.text.link,
-  },
-];
 
 export function RecentScansList() {
   const t = useTranslation(scanCopy);
@@ -63,18 +26,18 @@ export function RecentScansList() {
     <View testID="recent-scans-list">
       <Text style={styles.heading}>{t("recentScansHeading")}</Text>
       <View style={styles.rows}>
-        {PLACEHOLDER_ROWS.map((row) => (
+        {SAMPLE_CARDS.map((card) => (
           <View
-            key={row.id}
+            key={card.id}
             style={[styles.row, shadowSurface]}
-            testID={`recent-scan-row-${row.id}`}
+            testID={`recent-scan-row-${card.id}`}
           >
-            <View style={[styles.thumbnail, { backgroundColor: row.thumbnailColor }]} />
+            <View style={[styles.thumbnail, { backgroundColor: card.thumbnailColorToken }]} />
             <View style={styles.textColumn}>
-              <Text style={styles.name}>{row.name}</Text>
-              <Text style={styles.meta}>{row.meta}</Text>
+              <Text style={styles.name}>{card.name}</Text>
+              <Text style={styles.meta}>{formatListMeta(card)}</Text>
             </View>
-            <Text style={styles.price}>{row.price}</Text>
+            <Text style={styles.price}>{card.priceLabel}</Text>
           </View>
         ))}
       </View>

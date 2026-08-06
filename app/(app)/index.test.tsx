@@ -3,8 +3,10 @@
 // in this same change — renders the real HomeScreen (src/features/navigation/HomeScreen.tsx,
 // T013) rather than the old scaffold placeholder. Covers FR-001 (Home/Scan is a reachable
 // shell destination) and FR-009 (only what "main" renders changes; the gate itself is
-// untouched). HomeScreen composes AmigosQuickAccessPill, which calls expo-router's useRouter
-// directly, so it is mocked the same way HomeScreen.test.tsx (T013) does.
+// untouched). specs/008-scan-experience/tasks.md T025: HomeScreen (Inicio) now calls
+// expo-router's useRouter directly (repointing its quick-action card's onPress to
+// NAV_DESTINATIONS' "escanear" entry, since AmigosQuickAccessPill — the original caller — was
+// retired outright by T031), so useRouter is still mocked here, same mechanism as before.
 import React from "react";
 import { render, screen } from "@testing-library/react-native";
 
@@ -12,13 +14,7 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-// T020 (specs/004-home-scan-shell): HomeScreen (rendered via this route) now calls
-// useSafeAreaInsets() (a real-device finding fixed this run — see
-// progress/impl_004-home-scan-shell.md) — needs the library's own official Jest mock or
-// useSafeAreaInsets throws "No safe area value available." under react-test-renderer.
-jest.mock("react-native-safe-area-context", () =>
-  require("react-native-safe-area-context/jest/mock").default
-);
+import { homeCopy } from "@/domain/i18n/copy/home";
 
 import HomeRouteScreen from "./index";
 
@@ -29,6 +25,6 @@ describe("app/(app)/index.tsx", () => {
     render(<HomeRouteScreen />);
 
     expect(screen.getByTestId("home-screen")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Scan a card" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: homeCopy.es.scanQuickActionLabel })).toBeTruthy();
   });
 });

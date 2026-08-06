@@ -37,6 +37,24 @@ describe("Viewfinder", () => {
     expect(screen.getByText(scanCopy.es.viewfinderHint)).toBeTruthy();
   });
 
+  // specs/008-scan-experience/tasks.md T015 (FR-004, spec.md User Story 3 AS2): omitting
+  // `state` (or passing "idle" explicitly) renders the existing grid/brackets/hint — never the
+  // found-state heading.
+  it('defaults to "idle" and does not render the found-state heading', () => {
+    render(<Viewfinder />);
+
+    expect(screen.queryByText(scanCopy.es.viewfinderFoundHeading)).toBeNull();
+  });
+
+  // specs/008-scan-experience/tasks.md T015 (FR-004, spec.md User Story 3 AS2): "found" replaces
+  // the grid/brackets/camera-glyph/hint with the check glyph + "¡Carta encontrada!" heading.
+  it('state="found" renders the check glyph heading and not the idle hint', () => {
+    render(<Viewfinder state="found" />);
+
+    expect(screen.getByText(scanCopy.es.viewfinderFoundHeading)).toBeTruthy();
+    expect(screen.queryByText(scanCopy.es.viewfinderHint)).toBeNull();
+  });
+
   // spec.md US3 AS4: the settings-gear chip does nothing in this feature, so it must not be
   // exposed to a screen reader as an actionable control — nor should any other element in the
   // viewfinder (the whole component is inert presentation).
