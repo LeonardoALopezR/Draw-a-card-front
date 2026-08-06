@@ -13,7 +13,10 @@ import {
   requestPasswordResetSchema,
   resetPasswordWithCodeSchema,
   signInSchema,
+  tiendaCrearCuentaSchema,
+  tiendaProfileFormSchema,
   usernameSchema,
+  usuarioCrearCuentaSchema,
   verificationCodeSchema,
 } from "./schemas";
 
@@ -425,5 +428,111 @@ describe("businessProfileFormSchema", () => {
   it("rejects a business payload missing rfc", () => {
     const { rfc: _rfc, ...withoutRfc } = validBusinessInput;
     expect(businessProfileFormSchema.safeParse(withoutRfc).success).toBe(false);
+  });
+});
+
+// 010-registration-redesign T008 (FR-002, plan.md Research Decision 2): the combined Usuario-tab
+// shape UsuarioForm validates against — a merge of the two existing, unchanged schemas above.
+describe("usuarioCrearCuentaSchema", () => {
+  const validInput = {
+    email: "ana@example.com",
+    password: "supersecret1",
+    phone: "+525512345678",
+    username: "ana_garcia",
+    nombre: "Ana",
+    apellidoPaterno: "Garcia",
+    birthDate: "1990-01-01",
+    nationality: "MX",
+    curp: "GARA900101MDFXXX01",
+    rfc: "GARA900101ABC",
+    tosAccepted: true as const,
+    privacyAccepted: true as const,
+  };
+
+  it("accepts a payload covering every Usuario-tab field (registration + profile fields combined)", () => {
+    expect(usuarioCrearCuentaSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("accepts apellidoMaterno omitted (genuinely optional, inherited from profileFormSchema)", () => {
+    expect(usuarioCrearCuentaSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("rejects a payload missing a registration-side field (email)", () => {
+    const { email: _email, ...withoutEmail } = validInput;
+    expect(usuarioCrearCuentaSchema.safeParse(withoutEmail).success).toBe(false);
+  });
+
+  it("rejects a payload missing a profile-side field (nombre)", () => {
+    const { nombre: _nombre, ...withoutNombre } = validInput;
+    expect(usuarioCrearCuentaSchema.safeParse(withoutNombre).success).toBe(false);
+  });
+});
+
+// 010-registration-redesign T008 (FR-003, plan.md Research Decision 2): the Tienda tab's own
+// narrower profile-step shape — must NOT require any personal field profileFormSchema/
+// businessProfileFormSchema would otherwise pull in.
+describe("tiendaProfileFormSchema", () => {
+  const validInput = {
+    commercialName: "Tienda Ana",
+    rfc: "GARA900101ABC",
+    fiscalAddress: "Calle Falsa 123, CDMX",
+    tosAccepted: true as const,
+    privacyAccepted: true as const,
+  };
+
+  it("accepts a payload with exactly the Tienda profile fields, nothing else required", () => {
+    expect(tiendaProfileFormSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("does not require (or reject the absence of) any personal field", () => {
+    const parsed = tiendaProfileFormSchema.parse(validInput);
+    expect(parsed).not.toHaveProperty("nombre");
+    expect(parsed).not.toHaveProperty("apellidoPaterno");
+    expect(parsed).not.toHaveProperty("birthDate");
+    expect(parsed).not.toHaveProperty("nationality");
+    expect(parsed).not.toHaveProperty("curp");
+  });
+
+  it("rejects a payload missing commercialName", () => {
+    const { commercialName: _commercialName, ...withoutCommercialName } = validInput;
+    expect(tiendaProfileFormSchema.safeParse(withoutCommercialName).success).toBe(false);
+  });
+
+  it("rejects a payload missing rfc", () => {
+    const { rfc: _rfc, ...withoutRfc } = validInput;
+    expect(tiendaProfileFormSchema.safeParse(withoutRfc).success).toBe(false);
+  });
+
+  it("rejects a payload missing fiscalAddress", () => {
+    const { fiscalAddress: _fiscalAddress, ...withoutFiscalAddress } = validInput;
+    expect(tiendaProfileFormSchema.safeParse(withoutFiscalAddress).success).toBe(false);
+  });
+});
+
+describe("tiendaCrearCuentaSchema", () => {
+  const validInput = {
+    email: "tienda@example.com",
+    password: "supersecret1",
+    phone: "+525512345678",
+    username: "mi_tienda",
+    commercialName: "Tienda Ana",
+    rfc: "GARA900101ABC",
+    fiscalAddress: "Calle Falsa 123, CDMX",
+    tosAccepted: true as const,
+    privacyAccepted: true as const,
+  };
+
+  it("accepts a payload covering every Tienda-tab field (registration + Tienda profile fields combined)", () => {
+    expect(tiendaCrearCuentaSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("rejects a payload missing a registration-side field (username)", () => {
+    const { username: _username, ...withoutUsername } = validInput;
+    expect(tiendaCrearCuentaSchema.safeParse(withoutUsername).success).toBe(false);
+  });
+
+  it("rejects a payload missing a Tienda profile field (fiscalAddress)", () => {
+    const { fiscalAddress: _fiscalAddress, ...withoutFiscalAddress } = validInput;
+    expect(tiendaCrearCuentaSchema.safeParse(withoutFiscalAddress).success).toBe(false);
   });
 });

@@ -49,12 +49,40 @@ export const typography = {
       color: colors.text.secondary,
     } satisfies TextStyle,
   },
+  // 010-registration-redesign Run 6 (FR-006, carried-over Run 5 review nit): a mid-size,
+  // sans-serif heading — distinct from `display` above, which is reserved for this app's large
+  // serif hero titles (`Crear cuenta`, `/login`'s own title) and is visibly too big/too
+  // decorative for a secondary in-flow heading like the registration `sessionIssue` recovery
+  // view's "Tu cuenta fue creada"/"Your account was created" title. No existing token matched
+  // this pairing (`display.lg` is 28/700 with `PLAYFAIR_DISPLAY_BOLD`, wrong family entirely),
+  // so this is a new sibling category, not a color change — no new `contrast.test.ts` case is
+  // needed (this token carries no `color`; callers already source `color` from `colors.text.*`
+  // directly, exactly as `CrearCuentaScreen.tsx`/`.web.tsx` already do).
+  heading: {
+    sm: {
+      fontSize: 22,
+      fontWeight: "600",
+    } satisfies TextStyle,
+  },
   label: {
     field: {
       fontSize: 12,
       fontWeight: "500",
       textTransform: "uppercase",
       letterSpacing: 0.08 * 12,
+      color: colors.text.secondary,
+    } satisfies TextStyle,
+    // T003 (specs/010-registration-redesign, FR-006): a sibling of `field` above, not an edit to
+    // it — docs/design-brief-registration-redesign.md §2 wants sentence-case field labels
+    // ("Nombre completo", not uppercase) for this feature's screens, but `field` is already
+    // consumed uppercase by every other screen in the app (SignInForm, RequestPasswordResetForm,
+    // ResetPasswordForm, VerifyPhoneScreen, the pre-redesign RegistrationForm/ProfileForm).
+    // Changing `field` itself would silently re-style all of those. Same fontSize/fontWeight/
+    // color as `field` (no color change, so no new contrast.test.ts case is needed — inherits
+    // text.secondary, already covered), just no textTransform/letterSpacing.
+    fieldSentence: {
+      fontSize: 12,
+      fontWeight: "500",
       color: colors.text.secondary,
     } satisfies TextStyle,
     section: {

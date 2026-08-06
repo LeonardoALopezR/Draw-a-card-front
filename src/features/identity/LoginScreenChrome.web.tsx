@@ -23,11 +23,19 @@
 // HomeScreen.tsx/ScanShellScreen.web.tsx's identical "flex:1 clips against a short viewport"
 // fix: a ScrollView whose content container still centers the card (via `justifyContent` on the
 // content container itself) whenever it already fits, and scrolls once it doesn't.
+//
+// 010-registration-redesign T012 (FR-016, plan.md Research Decision 6): CARD_MAX_WIDTH below is
+// now sourced from the shared AUTH_CARD_MAX_WIDTH constant (authCardLayout.ts) instead of a
+// locally-owned literal, so this screen's web auth-card width and the new CrearCuentaScreen.web
+// one can never silently drift apart — same value (660) as before this change, just with one
+// shared source of truth.
 import type { ReactNode } from "react";
 import type { ViewStyle } from "react-native";
 import { ScrollView, StyleSheet, View } from "react-native";
 
 import { colors, radius, shadowSurface, withAlpha } from "@/theme";
+
+import { AUTH_CARD_MAX_WIDTH } from "./authCardLayout";
 
 type WebOnlyViewStyle = ViewStyle & { backgroundImage?: string };
 
@@ -43,7 +51,7 @@ const bloomBackgroundStyle: WebOnlyViewStyle = {
   ].join(", "),
 };
 
-const CARD_MAX_WIDTH = 660;
+const CARD_MAX_WIDTH = AUTH_CARD_MAX_WIDTH;
 const CARD_PADDING = 48;
 
 export interface LoginScreenChromeProps {

@@ -103,4 +103,15 @@ describe("token contrast pairings clear WCAG AA 4.5:1 (FR-004, Recorded default 
       AA_THRESHOLD
     );
   });
+
+  // T002 (specs/010-registration-redesign, FR-006): the `Usuario`/`Tienda` segmented control's
+  // inactive-segment label (text.secondary) on its new inactive-track fill
+  // (colors.segment.inactiveTrack, ≈#EDEEF5 per docs/design-brief-registration-redesign.md §2) —
+  // computed at 4.63:1, clearing the 4.5:1 AA floor. Regression-guards this exact pairing so a
+  // future edit to either token can't silently drop it below the floor.
+  it("text.secondary on segment.inactiveTrack (SegmentedControl's inactive label, spec 010 FR-006)", () => {
+    expect(
+      contrastRatio(colors.text.secondary, colors.segment.inactiveTrack)
+    ).toBeGreaterThanOrEqual(AA_THRESHOLD);
+  });
 });

@@ -109,6 +109,27 @@ export async function signInWithPassword(
   }
 }
 
+// T019 (010-registration-redesign, carried over from Run 5's code review, Finding 2): the real
+// email of whichever account is currently signed in, or `null` if none/unknown — used by
+// app/(auth)/verify-phone.tsx to confirm an in-memory registration draft
+// (src/lib/registration-draft.ts) was actually written for the account completing phone
+// verification right now, not a stale draft left behind by an earlier, abandoned
+// registration attempt in the same JS session (see that file's own doc comment for the concrete
+// leak this closes). MUST NEVER THROW, same shape/reasoning as signInWithPassword above —
+// supabase.auth.getSession() can reject on a network-level failure (T034's identical concern in
+// useKycGate.ts), and this call site fails CLOSED (returns `null`, so the caller treats it as "no
+// match" and falls back to the ordinary, safe /profile re-entry path) rather than letting an
+// unrelated transient error either crash phone verification's own already-succeeded result or
+// silently widen access to a draft it can't actually confirm.
+export async function getCurrentSessionEmail(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // T010 (specs/005-login), FR-007: the real implementation of src/domain/passwordReset.ts's
 // injected `RequestPasswordReset` type. Runs on the shared/ambient `supabase` singleton above —
 // deliberately, unlike createPasswordRecoverySession() below — because

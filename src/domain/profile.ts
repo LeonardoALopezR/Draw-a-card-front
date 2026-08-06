@@ -1,8 +1,14 @@
 // Pure TypeScript, no React/React Native imports (Constitution Principle IV). Same
 // dependency-injection pattern as registration.ts — see that file's file-level comment for why
-// this module accepts an `ApiClient` parameter rather than importing src/lib/api.ts directly,
-// and for the temporary X-User-Id auth note (specs/001-registration-kyc/spec.md Assumptions,
-// finding 5) that applies to this call exactly as it does to phone verification.
+// this module accepts an `ApiClient` parameter rather than importing src/lib/api.ts directly.
+// STALE-COMMENT CORRECTION (010-registration-redesign T014, plan.md Research Decision 7,
+// 2026-08-06): this used to point at a "temporary X-User-Id auth note"
+// (specs/001-registration-kyc/spec.md Assumptions, finding 5) describing the caller-identity
+// mechanism this call shares with phone verification. That dev-only X-User-Id trust path has
+// been deleted entirely by backend `004-session-authentication` (`done`) — the caller is now
+// identified the same way every other call in this app is, via the real Bearer-JWT
+// `Authorization` header src/lib/api.ts sends (see registration.ts's file-level comment for the
+// full corrected history).
 import { ApiError, type ApiClient } from "./api-client";
 import { SESSION_LOST_MESSAGE, toDomainUser, type BackendUser } from "./registration";
 import {
@@ -37,8 +43,10 @@ export interface SubmitProfileOptions {
 //
 // Other known backend error codes (ApiError.code, see api-client.ts): "RfcConflict" (409 — the
 // submitted RFC is already registered to another Tienda account, business accounts only),
-// "ValidationError" (400), "UserNotFound" (404 — a stale/forged X-User-Id, see
-// src/lib/api.ts's temporary auth note).
+// "ValidationError" (400), "UserNotFound" (404 — the authenticated caller's backend User record
+// doesn't exist, e.g. deleted server-side after the session was issued; see src/lib/api.ts's
+// corrected auth-history comment — this is no longer a "forged X-User-Id" scenario, that header
+// is inert against the real backend).
 export async function submitProfile(
   client: ApiClient,
   input: ProfileFormInput | BusinessProfileFormInput,
@@ -99,9 +107,10 @@ export function isPhoneNotVerifiedError(error: unknown): boolean {
 // the UI still has something inline-renderable rather than silently swallowing the error.
 export function mapProfileError(error: unknown): ProfileFieldError {
   if (error instanceof ApiError) {
-    // T033 (found by code-reviewer's second review, Finding 1 BLOCKING): should only ever be
-    // reachable if the X-User-Id wiring (app/(auth)/register.tsx) regresses — see
-    // registration.ts's SESSION_LOST_MESSAGE doc comment. Not a form field error, so no `field`.
+    // T033 (found by code-reviewer's second review, Finding 1 BLOCKING): the caller's session is
+    // missing/expired/invalid — see registration.ts's SESSION_LOST_MESSAGE doc comment (corrected
+    // 2026-08-06, no longer only an X-User-Id-regression case). Not a form field error, so no
+    // `field`.
     if (error.code === "Unauthenticated") {
       return { message: SESSION_LOST_MESSAGE };
     }

@@ -13,6 +13,14 @@
 // FormFieldProps (label/error/children/testID) is unchanged so every existing call site
 // (RegistrationForm, VerifyPhoneScreen, ProfileForm, SignInForm, RequestPasswordResetForm,
 // ResetPasswordForm) keeps compiling with no prop change — this restyle changes appearance only.
+//
+// T004 (specs/010-registration-redesign, FR-006): adds an optional `labelCase` prop, defaulting
+// to "uppercase" — every existing call site above was grepped and confirmed to pass no
+// `labelCase` prop today (2026-08-06), so this default is what keeps them byte-for-byte
+// unaffected, not just a theoretical safety net. Only this feature's new Usuario/Tienda forms
+// pass `labelCase="sentence"` (docs/design-brief-registration-redesign.md §2 — sentence-case
+// labels, not this app's usual uppercase). See src/theme/typography.ts's `fieldSentence` token
+// comment for why this is a sibling token, not an edit to `label.field` itself.
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -23,6 +31,7 @@ export interface FormFieldProps {
   error?: string;
   children: ReactNode;
   testID?: string;
+  labelCase?: "uppercase" | "sentence";
 }
 
 // Renders a visible label, the field itself, and — when present — an inline error message
@@ -30,10 +39,10 @@ export interface FormFieldProps {
 // full-screen replacement). `accessibilityRole="alert"` on the error text is what makes
 // VoiceOver/TalkBack announce it as soon as it appears, without requiring the user to
 // re-discover the field (Constitution VII).
-export function FormField({ label, error, children, testID }: FormFieldProps) {
+export function FormField({ label, error, children, testID, labelCase = "uppercase" }: FormFieldProps) {
   return (
     <View style={styles.field} testID={testID}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={labelCase === "sentence" ? styles.labelSentence : styles.label}>{label}</Text>
       <View
         style={[styles.inputContainer, shadowSurface]}
         testID={testID ? `${testID}-input` : undefined}
@@ -55,6 +64,9 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.label.field,
+  },
+  labelSentence: {
+    ...typography.label.fieldSentence,
   },
   inputContainer: {
     height: CONTROL_HEIGHT,

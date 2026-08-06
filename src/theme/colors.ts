@@ -32,6 +32,21 @@
 // human's explicit request (purple/warm red-orange/dark teal), each a standard two-stop
 // Tailwind-shade ramp of the same hue (light stop -> dark stop) for a believable gradient rather
 // than two arbitrary colors.
+//
+// segment.inactiveTrack (T002, specs/010-registration-redesign): the `Usuario`/`Tienda`
+// segmented control's inactive-segment fill (docs/design-brief-registration-redesign.md §2 —
+// "pale lavender-gray, ≈#EDEEF5; add a token, do not inline"). Computed, not eyeballed
+// (Constitution VII): `contrastRatio(colors.text.secondary, "#EDEEF5")` = 4.634… (rounds to
+// 4.63:1), clearing the 4.5:1 AA floor for the inactive segment's `text.secondary` label —
+// contrast.test.ts regression-guards this exact pairing.
+//
+// overlay.backdrop (T006 review fix, specs/010-registration-redesign): the native `Select`
+// picker's full-screen modal backdrop (previously an inline `"rgba(0,0,0,0.4)"` literal, flagged
+// by code review as an FR-006 violation — "no new hex literals" per
+// docs/design-brief-registration-redesign.md §1). A translucent black scrim behind a surface is
+// purely decorative dimming, not a text-on-background color pairing, so it carries no
+// contrast.test.ts case the way text/background tokens above do — there is no text rendered
+// directly on this fill for a reader to parse.
 export const colors = {
   brand: {
     primary: "#C7F24C",
@@ -62,6 +77,12 @@ export const colors = {
   accent: {
     priceGreen: "#1C844A",
     pillBg: "#E4F5E7",
+  },
+  segment: {
+    inactiveTrack: "#EDEEF5",
+  },
+  overlay: {
+    backdrop: "rgba(0,0,0,0.4)",
   },
   // Two-stop decorative gradients for the sample-card pool's thumbnails
   // (src/domain/scanResults.ts's `thumbnailGradient`, rendered by

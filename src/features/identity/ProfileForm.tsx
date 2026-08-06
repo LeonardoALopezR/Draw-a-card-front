@@ -8,7 +8,21 @@
 // interprets an ApiError itself — see src/domain/profile.ts's mapProfileError/
 // isPhoneNotVerifiedError for where that lives.
 //
-// T026 (US2, FR-003, FR-004): adds `commercialName`/`fiscalAddress` as a conditional block,
+// T021 (specs/010-registration-redesign, FR-006): restyled in place to this feature's shared
+// `006-visual-identity` token layer (`FormField`'s `labelCase="sentence"` per T004,
+// `src/theme` colors/typography/radius/space throughout, `PrimaryButton` for the submit control)
+// — SAME fields, SAME `profileFormSchema`/`businessProfileFormSchema` resolver, SAME props, NO
+// structural change (plan.md Research Decision 1's step 5). Every rendered string
+// (accessibilityLabel/placeholder/button copy) is left byte-for-byte unchanged from before this
+// restyle — those are behavioral surface, not visual style, and `ProfileForm.test.tsx`'s existing
+// `getByLabelText`/`getByRole` assertions depend on them staying exactly as they were. This
+// screen is now the explicit recovery/resumability path (not the primary `Crear cuenta`
+// journey), so it deliberately does NOT gain a segmented control or any new field. The business
+// block just below (still validated against `businessProfileFormSchema`, still requiring
+// personal fields) is deliberately NOT narrowed to `tiendaProfileFormSchema` here either — a
+// separate, later task records that explicit `015`-gated follow-up (plan.md Research Decision 8).
+//
+// 001-registration-kyc T026 (US2, FR-003, FR-004): adds `commercialName`/`fiscalAddress` as a conditional block,
 // rendered only when the `isBusiness` prop is true (rfc above is reused as-is for both account
 // types — see schemas.ts's doc comment on businessProfileFormSchema for why there is no
 // separate business-RFC field). `isBusiness` is a prop, not a value this component fetches or
@@ -39,6 +53,9 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import type { ProfileFieldError } from "@/domain/profile";
 import { businessProfileFormSchema, profileFormSchema, type ProfileFormInput } from "@/domain/schemas";
+import { PrimaryButton } from "@/features/ui/PrimaryButton";
+import { spaceKeyActivation } from "@/features/ui/webKeyActivation";
+import { colors, radius, space, typography } from "@/theme";
 
 import { FormField } from "./FormField";
 
@@ -140,7 +157,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         </Text>
       ) : null}
 
-      <FormField label="Nombre" error={errors.nombre?.message} testID="profile-nombre-field">
+      <FormField label="Nombre" error={errors.nombre?.message} labelCase="sentence" testID="profile-nombre-field">
         <Controller
           control={control}
           name="nombre"
@@ -152,6 +169,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
               onBlur={field.onBlur}
               editable={!isSubmitting}
               accessibilityLabel="Nombre"
+              placeholderTextColor={colors.text.placeholder}
               testID="profile-nombre-input"
             />
           )}
@@ -161,6 +179,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
       <FormField
         label="Apellido paterno"
         error={errors.apellidoPaterno?.message}
+        labelCase="sentence"
         testID="profile-apellido-paterno-field"
       >
         <Controller
@@ -174,6 +193,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
               onBlur={field.onBlur}
               editable={!isSubmitting}
               accessibilityLabel="Apellido paterno"
+              placeholderTextColor={colors.text.placeholder}
               testID="profile-apellido-paterno-input"
             />
           )}
@@ -183,6 +203,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
       <FormField
         label="Apellido materno (optional)"
         error={errors.apellidoMaterno?.message}
+        labelCase="sentence"
         testID="profile-apellido-materno-field"
       >
         <Controller
@@ -196,13 +217,19 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
               onBlur={field.onBlur}
               editable={!isSubmitting}
               accessibilityLabel="Apellido materno"
+              placeholderTextColor={colors.text.placeholder}
               testID="profile-apellido-materno-input"
             />
           )}
         />
       </FormField>
 
-      <FormField label="Birth date" error={errors.birthDate?.message} testID="profile-birth-date-field">
+      <FormField
+        label="Birth date"
+        error={errors.birthDate?.message}
+        labelCase="sentence"
+        testID="profile-birth-date-field"
+      >
         <Controller
           control={control}
           name="birthDate"
@@ -215,6 +242,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
               editable={!isSubmitting}
               accessibilityLabel="Birth date"
               placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.text.placeholder}
               autoCapitalize="none"
               testID="profile-birth-date-input"
             />
@@ -222,7 +250,12 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         />
       </FormField>
 
-      <FormField label="Nationality" error={errors.nationality?.message} testID="profile-nationality-field">
+      <FormField
+        label="Nationality"
+        error={errors.nationality?.message}
+        labelCase="sentence"
+        testID="profile-nationality-field"
+      >
         <Controller
           control={control}
           name="nationality"
@@ -241,7 +274,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         />
       </FormField>
 
-      <FormField label="CURP" error={errors.curp?.message} testID="profile-curp-field">
+      <FormField label="CURP" error={errors.curp?.message} labelCase="sentence" testID="profile-curp-field">
         <Controller
           control={control}
           name="curp"
@@ -261,7 +294,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         />
       </FormField>
 
-      <FormField label="RFC" error={errors.rfc?.message} testID="profile-rfc-field">
+      <FormField label="RFC" error={errors.rfc?.message} labelCase="sentence" testID="profile-rfc-field">
         <Controller
           control={control}
           name="rfc"
@@ -281,7 +314,19 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         />
       </FormField>
 
-      {/* T026 (US2): business-only fields — rfc above is reused as-is (see
+      {/* 010-registration-redesign T026 (2026-08-06, plan.md Research Decision 8): FOLLOW-UP, NOT
+          IMPLEMENTED HERE. This block still validates against businessProfileFormSchema (line 122
+          above), which still requires the personal fields (nombre/apellidoPaterno/birthDate/
+          nationality/curp) the primary Tienda tab (TiendaForm.tsx) never collects. Once backend
+          015-registration-profile-support's User Story 2 ships (relaxing profileBusinessSchema to
+          match), this block should switch its resolver to tiendaProfileFormSchema
+          (src/domain/schemas.ts) instead, so a resumed Tienda user reaching this recovery screen
+          stops being asked for personal fields they were never shown on Crear cuenta. Deliberately
+          left as businessProfileFormSchema for now — today's real backend still requires those
+          personal fields, so narrowing this now would make this recovery screen fail for exactly
+          the Tienda users it exists to help (see this file's T021 comment above and plan.md
+          Research Decision 8 for the full reasoning). */}
+      {/* 001-registration-kyc T026 (US2): business-only fields — rfc above is reused as-is (see
           src/domain/schemas.ts's businessProfileFormSchema doc comment for why there is no
           separate business-RFC field). Rendered only for business accounts; the resolver above
           also requires both, so omitting either at submission time shows the inline error below
@@ -291,6 +336,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
           <FormField
             label="Commercial name"
             error={errors.commercialName?.message}
+            labelCase="sentence"
             testID="profile-commercial-name-field"
           >
             <Controller
@@ -304,6 +350,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
                   onBlur={field.onBlur}
                   editable={!isSubmitting}
                   accessibilityLabel="Commercial name"
+                  placeholderTextColor={colors.text.placeholder}
                   testID="profile-commercial-name-input"
                 />
               )}
@@ -313,6 +360,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
           <FormField
             label="Fiscal address"
             error={errors.fiscalAddress?.message}
+            labelCase="sentence"
             testID="profile-fiscal-address-field"
           >
             <Controller
@@ -326,6 +374,7 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
                   onBlur={field.onBlur}
                   editable={!isSubmitting}
                   accessibilityLabel="Fiscal address"
+                  placeholderTextColor={colors.text.placeholder}
                   testID="profile-fiscal-address-input"
                 />
               )}
@@ -353,6 +402,14 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
             // the one prop that's correct on both platforms.
             aria-checked={!!field.value}
             accessibilityState={{ checked: !!field.value, disabled: isSubmitting }}
+            // T027 (specs/010-registration-redesign, FR-015): role="checkbox" silently drops
+            // Space-key activation on this repo's pinned react-native-web (see
+            // src/features/ui/webKeyActivation.ts's top comment) — Enter already works without
+            // this.
+            {...spaceKeyActivation(
+              () => field.onChange((!field.value) as unknown as true),
+              isSubmitting,
+            )}
             testID="profile-tos-checkbox"
           >
             <View style={[styles.checkbox, field.value ? styles.checkboxChecked : null]} />
@@ -380,6 +437,10 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
             // explanation of why aria-checked is needed alongside accessibilityState.checked.
             aria-checked={!!field.value}
             accessibilityState={{ checked: !!field.value, disabled: isSubmitting }}
+            {...spaceKeyActivation(
+              () => field.onChange((!field.value) as unknown as true),
+              isSubmitting,
+            )}
             testID="profile-privacy-checkbox"
           >
             <View style={[styles.checkbox, field.value ? styles.checkboxChecked : null]} />
@@ -393,88 +454,70 @@ export function ProfileForm({ onSubmit, isSubmitting = false, isBusiness = false
         </Text>
       ) : null}
 
-      <Pressable
-        style={[styles.button, isSubmitting ? styles.buttonDisabled : null]}
+      <PrimaryButton
+        label={isSubmitting ? "Saving…" : "Save profile"}
         onPress={submit}
-        disabled={isSubmitting}
-        accessibilityRole="button"
-        accessibilityLabel="Save profile"
-        accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+        busy={isSubmitting}
         testID="profile-submit-button"
-      >
-        <Text style={styles.buttonText}>{isSubmitting ? "Saving…" : "Save profile"}</Text>
-      </Pressable>
+      />
     </View>
   );
 }
 
-// Minimum 44x44 tap targets (Constitution VII, SC-003) on every interactive element (inputs,
-// checkboxes, button); single narrow column, unmodified at a 375px-wide web viewport through
-// tablet/desktop widths — mirrors RegistrationForm's/VerifyPhoneScreen's layout exactly.
+// T021 (specs/010-registration-redesign, FR-006): every value below now traces to src/theme's
+// tokens — no raw hex/magic-number literal — mirroring TiendaForm.tsx's/UsuarioForm.tsx's
+// identical style-block shape exactly. `input` only carries text styling now (no
+// border/padding/height of its own): FormField's own `inputContainer` (radius.pill, bg.surface,
+// shadowSurface, CONTROL_HEIGHT) already supplies the pill container, the same division of
+// responsibility TiendaForm/UsuarioForm already established. Minimum 44x44 tap targets
+// (Constitution VII, SC-003) on every interactive element (inputs, checkboxes, the PrimaryButton
+// submit control) are preserved; single narrow column, unmodified at a 375px-wide web viewport
+// through tablet/desktop widths.
 const styles = StyleSheet.create({
   container: {
     width: "100%",
     maxWidth: 420,
-    gap: 16,
+    gap: space.lg,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "600",
+    fontSize: typography.heading.sm.fontSize,
+    fontWeight: typography.heading.sm.fontWeight,
+    color: colors.text.primary,
   },
   generalError: {
     fontSize: 14,
-    color: "#dc2626",
+    color: colors.text.danger,
   },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    fontSize: typography.body.input.fontSize,
+    fontWeight: typography.body.input.fontWeight,
+    color: colors.text.primary,
+    padding: 0,
   },
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
     minHeight: 44,
-    gap: 10,
+    gap: space.md,
   },
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 4,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: "#9ca3af",
+    borderColor: colors.border.input,
   },
   checkboxChecked: {
-    backgroundColor: "#111827",
-    borderColor: "#111827",
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
   },
   checkboxLabel: {
-    fontSize: 14,
-    color: "#374151",
+    fontSize: typography.body.tagline.fontSize,
+    color: colors.text.secondary,
     flexShrink: 1,
   },
   error: {
     fontSize: 13,
-    color: "#dc2626",
-  },
-  button: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 8,
-    backgroundColor: "#111827",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
+    color: colors.text.danger,
   },
 });

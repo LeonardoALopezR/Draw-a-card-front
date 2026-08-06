@@ -14,22 +14,21 @@
 // src/features/identity hook, T009/T010 — out of this run's scope) pass `api` from
 // src/lib/api.ts at the call site instead.
 //
-// Temporary auth note (specs/001-registration-kyc/spec.md Assumptions, finding 5): the
-// backend's `/identity/phone/*` and `/identity/me/*` routes identify the caller via a dev-only
-// `X-User-Id` header (see src/lib/api.ts's `setCurrentUserId`), not real session/token
-// verification. Whoever wires these functions into a screen/hook MUST call
-// `setCurrentUserId(user.id)` (src/lib/api.ts) once after a successful
-// submitPersonalRegistration/submitBusinessRegistration call — otherwise verifyPhoneCode,
-// resendVerificationCode, and profile.ts's submitProfile will fail the backend's
-// Unauthenticated/HeaderAuthNotAllowedInProduction checks. This function layer does not do that
-// wiring itself (it has no access to src/lib/api.ts — see above). T033 (2026-08-04, found by
-// code-reviewer's second review, Finding 1 BLOCKING): that wiring is now actually done, exactly
-// once, in app/(auth)/register.tsx, right after a successful registration response — see that
-// file's own doc comment. NOTE (T031, 2026-08-04): this is a separate, already-tracked gap from
-// the Supabase-session gap this file's `SignInWithPassword` DI seam below fixes — the backend's
-// own `User.id` is distinct from the Supabase `authProviderId`/session established by `signIn`
-// below, and deriving one from the other is explicitly out of this task's scope. Do not extend
-// the `X-User-Id` mechanism to try to close that gap here.
+// STALE / CORRECTED (010-registration-redesign T014, plan.md Research Decision 7, corrected
+// 2026-08-06): this paragraph used to describe `/identity/phone/*` and `/identity/me/*` as
+// identifying the caller via a dev-only `X-User-Id` header (see src/lib/api.ts's
+// `setCurrentUserId`), not real session/token verification (specs/001-registration-kyc/spec.md
+// Assumptions, finding 5). Backend `004-session-authentication` (`done`, merged 2026-08-06)
+// deleted that trust path entirely, in every `NODE_ENV`, and replaced it with real Bearer-JWT
+// verification (`requireAuth`, the backend repo's src/shared/auth.ts) against the
+// `Authorization: Bearer <supabase access_token>` header src/lib/api.ts already sends on every
+// call (it always has). The `X-User-Id`-sending code itself is left in place (see src/lib/api.ts
+// for why — it is now an inert no-op against the real backend, not load-bearing); the
+// `setCurrentUserId(user.id)` call in app/(auth)/register.tsx (T033, below) is likewise
+// unremoved but no longer functionally necessary for the real backend to identify the caller.
+// This is a separate, already-tracked gap from the Supabase-session gap this file's
+// `SignInWithPassword` DI seam below fixes — the backend's own `User.id` is distinct from the
+// Supabase `authProviderId`/session established by `signIn` below.
 //
 // T031 (session establishment): the backend's `POST /identity/register(/business)` creates the
 // Supabase Auth account server-side (`getAuthProvider().signUpWithPassword`, Draw-a-card backend
@@ -201,9 +200,10 @@ export async function retrySignIn(
 }
 
 // FR-002: POST /identity/phone/verify — the 5-digit code. Requires the backend to be able to
-// identify the caller (X-User-Id, see the file-level auth note above); a call made without
-// setCurrentUserId() having been set first surfaces the backend's "Unauthenticated" (401)
-// ApiError. Known backend error codes: "PhoneCodeInvalid" (400, wrong code),
+// identify the caller — today, via the real Bearer-JWT `Authorization` header src/lib/api.ts
+// already sends on every call (see the file-level auth note above for the now-corrected history
+// of this comment); a call made with no valid Supabase session surfaces the backend's
+// "Unauthenticated" (401) ApiError. Known backend error codes: "PhoneCodeInvalid" (400, wrong code),
 // "PhoneCodeExpired" (400, code TTL elapsed or never issued), "PhoneCodeAttemptsExceeded" (429,
 // per-code guess cap reached — the code is invalidated outright, requiring a resend),
 // "ValidationError" (400).
@@ -236,17 +236,15 @@ export async function resendVerificationCode(client: ApiClient): Promise<{ messa
 // FR-009, FR-010: GET /identity/me/kyc-status — the ONLY backend endpoint today that reports
 // anything at all about an already-identified, returning user (confirmed by reading every route
 // in the Draw-a-card backend repo's src/modules/identity/routes.ts directly — there is no
-// GET /identity/me returning the full profile). It also requires the backend's dev-only
-// X-User-Id header (src/lib/api.ts's setCurrentUserId), which is only set in-memory by a
-// same-JS-session registration/verification/profile call and is deliberately NOT persisted
-// across app restarts (specs/001-registration-kyc/spec.md Assumptions, finding 5 — this feature
-// does not make the header mechanism more automatic/pervasive than necessary). On a genuine cold
-// boot (fresh JS process, no prior in-session registration call) this call is therefore expected
-// to fail — Unauthenticated (401) or HeaderAuthNotAllowedInProduction (503) — even though the
-// Supabase session itself may still be valid; see
-// src/features/identity/useKycGate.ts (T010) for how that expected failure is surfaced as
-// FR-010's retryable statusFetchFailed state rather than a silent pass-through or a false
-// "unauthenticated".
+// GET /identity/me returning the full profile). It requires the backend to be able to identify
+// the caller via a valid Supabase session's Bearer JWT (see the file-level auth note above —
+// STALE / CORRECTED 2026-08-06: this used to also require the backend's dev-only X-User-Id
+// header, src/lib/api.ts's setCurrentUserId; that trust path has been deleted entirely,
+// backend `004-session-authentication`, `done`). On a genuine cold boot (fresh JS process with
+// no valid/refreshable Supabase session) this call is therefore expected to fail —
+// Unauthenticated (401) — see src/features/identity/useKycGate.ts (T010) for how that expected
+// failure is surfaced as FR-010's retryable statusFetchFailed state rather than a silent
+// pass-through or a false "unauthenticated".
 export async function fetchCurrentUser(client: ApiClient): Promise<{ kycStatus: KycStatus }> {
   return client<{ kycStatus: KycStatus }>("/identity/me/kyc-status", { method: "GET" });
 }
@@ -310,13 +308,18 @@ export function mapRegistrationError(error: unknown): RegistrationFieldError {
 }
 
 // T033 (found by code-reviewer's second review, Finding 1 BLOCKING): shared, actionable copy for
-// the backend's Unauthenticated (401) rejection on any X-User-Id-gated call (verifyPhoneCode,
-// resendVerificationCode, and profile.ts's submitProfile all hit this if setCurrentUserId's
-// wiring — app/(auth)/register.tsx — ever regresses). There is no user-facing re-authentication
-// flow in this feature (per tasks.md's Notes: a fresh login screen for an expired session is out
-// of scope), so the only honest, actionable instruction available is to restart the flow, which
-// re-establishes both the Supabase session and this dev-only identifier. Exported so
-// src/domain/profile.ts's mapProfileError can reuse the identical copy rather than drifting.
+// the backend's Unauthenticated (401) rejection on any call requiring a caller identity
+// (verifyPhoneCode, resendVerificationCode, and profile.ts's submitProfile all hit this if no
+// valid Supabase session's Bearer JWT is available — STALE-COMMENT CORRECTION 2026-08-06,
+// 010-registration-redesign T014: this used to be described as only reachable via a dev-only
+// X-User-Id wiring regression, back when that header was the backend's real trust mechanism;
+// backend `004-session-authentication` replaced it with real Bearer-JWT verification, so this is
+// now the ordinary "the caller's session is missing/expired/invalid" case, not only a regression
+// case). There is no user-facing re-authentication flow in this feature (per tasks.md's Notes: a
+// fresh login screen for an expired session is out of scope), so the only honest, actionable
+// instruction available is to restart the flow, which re-establishes the Supabase session.
+// Exported so src/domain/profile.ts's mapProfileError can reuse the identical copy rather than
+// drifting.
 export const SESSION_LOST_MESSAGE =
   "We couldn't verify your session. Please close and reopen the app, then start again from registration.";
 
@@ -340,9 +343,9 @@ export interface VerifyPhoneFieldError {
 // so the UI still has something inline-renderable rather than silently swallowing the error.
 export function mapVerifyPhoneError(error: unknown): VerifyPhoneFieldError {
   if (error instanceof ApiError) {
-    // T033: should only ever be reachable if the X-User-Id wiring (app/(auth)/register.tsx)
-    // regresses — see SESSION_LOST_MESSAGE's doc comment above. Checked before every other
-    // branch so a stale-session 401 is never mistaken for a wrong/expired code.
+    // T033: the caller's session is missing/expired/invalid — see SESSION_LOST_MESSAGE's doc
+    // comment above (corrected 2026-08-06, no longer only an X-User-Id-regression case). Checked
+    // before every other branch so this is never mistaken for a wrong/expired code.
     if (error.code === "Unauthenticated") {
       return { message: SESSION_LOST_MESSAGE };
     }
@@ -371,8 +374,8 @@ export function mapVerifyPhoneError(error: unknown): VerifyPhoneFieldError {
 // the backend's own message verbatim; anything else falls back to a generic message.
 export function mapResendError(error: unknown): string {
   if (error instanceof ApiError) {
-    // T033: same reasoning as mapVerifyPhoneError's Unauthenticated branch above — only
-    // reachable if the X-User-Id wiring regresses.
+    // T033: same reasoning as mapVerifyPhoneError's Unauthenticated branch above (corrected
+    // 2026-08-06).
     if (error.code === "Unauthenticated") {
       return SESSION_LOST_MESSAGE;
     }
