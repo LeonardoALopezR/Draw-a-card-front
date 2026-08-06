@@ -8,6 +8,21 @@
 // too instead of only on native (FR-011). Uses expo-router's <Link>, which react-native-web
 // renders as a real <a> element on web — reachable via Tab/Shift+Tab with the browser's default
 // focus outline left untouched (Constitution VII, SC-002).
+//
+// Layout-bug fix (found by a live browser render after commit 39c3f02, not by this file's own
+// test suite — see progress/impl_008-scan-experience.md's dedicated fix entry): react-native-web
+// renders <Link> as an inline <a> (its base style is `display: inline`, same as its underlying
+// Text primitive), so flex properties applied directly to it — `flexDirection`, `alignItems`,
+// `gap` — are silently ignored by the browser even though they're genuinely present in the
+// flattened style object. The icon and label rendered flush against each other with zero
+// separation. Fix: `styles.link` (on <Link> itself) now sets `display: "flex"` explicitly so the
+// anchor becomes a real flex container — this is also what makes `minWidth`/`minHeight` (the
+// 44x44 tap target, T033) actually take effect on the anchor element, since CSS min-width/
+// min-height are likewise ignored on non-replaced inline elements; and the icon+label's own
+// flexDirection/alignItems/gap now live on a nested `<View>` (`styles.linkContent`) rather than on
+// the Link, since a real View is guaranteed to be a flex container on every platform without
+// needing an explicit `display` override (unlike Link/Text, whose default is web-only `inline`) —
+// so this layout can't silently regress again if a future edit touches `styles.link`.
 import { Ionicons } from "@expo/vector-icons";
 import { Link, Slot } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
@@ -63,12 +78,14 @@ export function WebSidebarNav() {
             accessibilityLabel={DESTINATION_LABELS[destination.key]}
             style={styles.link}
           >
-            <Ionicons
-              name={DESTINATION_ICONS[destination.key]}
-              size={20}
-              color={colors.text.primary}
-            />
-            <Text style={styles.linkLabel}>{DESTINATION_LABELS[destination.key]}</Text>
+            <View style={styles.linkContent}>
+              <Ionicons
+                name={DESTINATION_ICONS[destination.key]}
+                size={20}
+                color={colors.text.primary}
+              />
+              <Text style={styles.linkLabel}>{DESTINATION_LABELS[destination.key]}</Text>
+            </View>
           </Link>
         ))}
       </View>
@@ -111,9 +128,11 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
   link: {
-    flexDirection: "row",
+    // `display: "flex"` is load-bearing, not decorative — see this file's header comment. Without
+    // it, react-native-web's default `display: inline` for <Link>/<Text> silently drops every
+    // flex-dependent property below, including the 44x44 tap target.
+    display: "flex",
     alignItems: "center",
-    gap: space.sm,
     // T033 (accessibility pass, Constitution VII): explicit minWidth, not just minHeight — the
     // sidebar's icon+text content already exceeds 44px in practice, but WebBottomBarNav.tsx's
     // equivalent link style states both floors explicitly, so this one now matches instead of
@@ -123,6 +142,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 8,
+  },
+  // The real icon+label layout — a genuine flex container on every platform without needing the
+  // `display` override `styles.link` above needs (see this file's header comment).
+  linkContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
   },
   linkLabel: {
     fontSize: 16,

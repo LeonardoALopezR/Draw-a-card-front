@@ -2537,3 +2537,257 @@ fully closed:
 None of the above blocks `./init.sh`'s green result (T037) or the full test suite (T035) — both are
 genuinely green — but neither substitutes for the items above, per `docs/verification.md`'s own
 anti-pattern list ("an unreachable screen is not a verified screen").
+
+---
+
+## Run 11 — Post-ship layout bug fix: `<Link>` flex styles silently ignored on web
+
+**This is exactly the kind of gap Run 10's item 2 warned about.** The feature shipped in commit
+`39c3f02` with a real layout bug in `WebBottomBarNav.tsx`/`WebSidebarNav.tsx` that all 476 tests
+passed straight through, because those tests assert the flattened style *object* (which genuinely
+contained `gap`), never how `react-native-web` actually renders `<Link>` in a browser. **It was
+found by a live browser render, not by this test suite** — the exact failure mode Run 10 could
+only warn about in the abstract ("confirmed via `StyleSheet.flatten(...)` assertions... never
+measured against an actual rendered... screen") turned out to be a real, shipped defect, not a
+hypothetical gap. Recorded here as a concrete data point for this repo's verification history:
+component/screen tests that only assert style *props* are not sufficient evidence that a web
+layout renders correctly, and `docs/verification.md`'s "an unreachable screen is not a verified
+screen" caveat should probably be read to also cover "a screen whose tests never modeled the
+target renderer's actual box model."
+
+### The bug
+
+`WebBottomBarNav.tsx` and `WebSidebarNav.tsx` applied `gap`/`alignItems`/`justifyContent` (and,
+in the sidebar's case, `flexDirection: "row"`) directly to expo-router's `<Link>`, with the
+`Ionicons` glyph and the label `<Text>` as its direct children. `react-native-web` renders
+`<Link>` as an inline `<a>` on web (confirmed by reading
+`node_modules/react-native-web/dist/exports/Text/index.js`: the component's base style is
+`display: 'inline'`, same as the underlying `Text` primitive `Link` wraps). Flex properties have
+no effect on `display: inline` elements, so the icon and label rendered flush against each other
+with zero separation at both 375px and desktop widths — exactly as described in the bug report
+(home glyph flush against "Inicio", scan-frame glyph overlapping "Escanear").
+
+**A second, previously-undetected consequence of the same root cause**: `minWidth`/`minHeight`
+(T033's 44×44 tap-target floor) were *also* silently ignored on the same `display: inline`
+element — CSS `min-width`/`min-height` don't apply to non-replaced inline boxes either. This means
+the web tap target was smaller than the accessibility floor the whole time T033's own test
+(`StyleSheet.flatten(link.props.style).minWidth >= 44`) reported as passing. This wasn't called
+out in the original bug report but is the same class of defect and is fixed by the same change.
+
+### Fix
+
+Read `node_modules/expo-router/build/link/Link.js` and
+`node_modules/react-native-web/dist/exports/Text/index.js` before choosing a fix, to confirm
+*why* the styles were ignored rather than guessing.
+
+Adopted (and extended) the suggested fix — kept `<Link>` for navigation/semantics, moved the
+icon+label flex layout onto a nested `<View>` — plus one addition the write-up flagged as needing
+verification: also set `display: "flex"` on the `<Link>`'s own style (`styles.link`), not removed.
+
+Reasoning for keeping both changes rather than either alone:
+
+- **Nested `<View>` for `gap`/`alignItems`/`flexDirection`** (`styles.linkContent`): a `View`
+  is guaranteed to be a flex container on every platform without any `display` override, unlike
+  `Link`/`Text` whose default is web-only `inline`. This means the icon/label layout can't
+  silently regress again if a future edit touches `styles.link` and drops an easy-to-miss
+  `display: "flex"` line — a real structural guarantee, not just "this specific style object
+  happens to be correct today."
+- **`display: "flex"` kept on `<Link>`'s own style, not delegated to the inner `View`**: this is
+  what makes `minWidth`/`minHeight` (the actual tap target) apply to the real, focusable,
+  `accessibilityRole="link"` element — not just to an inner `View`'s bounding box. The task
+  explicitly flagged this risk ("make sure the touch target stays on the element that is actually
+  the link, not only on an inner View"), and it's a real risk: without `display: "flex"` on the
+  `Link` itself, an inline anchor's line-box height is driven by its content's rendered size
+  (here, the icon+label wrapper, well under 44px tall), so the tap target would still be broken —
+  just less visually obvious than the gap bug, and not what the bug report called out, but the same
+  underlying defect.
+
+An alternative considered and rejected: only adding `display: "flex"` to `<Link>`'s own style
+(no nested `View`, keeping `Ionicons`/`Text` as direct children, matching the *original* file
+structure exactly). This would have fixed the bug identically, with a smaller diff. Rejected for
+two reasons: (1) it's more fragile — a single style-object property is easy to delete in a future
+refactor without anyone noticing the web-only consequence, whereas a `View` wrapper is a
+structural fact of the component tree; (2) `jest-expo`'s default test environment renders through
+`react-test-renderer`, not `react-native-web`/jsdom-with-real-CSS-layout — there is no way to
+write a Jest test in this repo that verifies actual computed CSS (`display`, `gap`) takes effect
+in a browser, only that a given style value is *present*, which is precisely the class of
+assertion that let this bug ship in the first place. A `View`-wrapper *structure* is the one thing
+this Jest environment genuinely can verify as a reliable proxy for "this will actually flex on
+web," since `View`'s flex-by-default behavior is not conditional on any style value at all.
+
+**Accessibility properties confirmed unchanged**: `accessibilityRole="link"` and
+`accessibilityLabel` stay on the `<Link>` itself (unchanged from before — never moved to the
+inner `View`). The inner `View` carries no accessibility props of its own, so it introduces no new
+node in the accessibility tree — a plain, unlabeled `<div>` inside an `<a>` is accessibility-inert
+and does not affect `role`, name, or keyboard-focus behavior. Nesting a `<div>` inside an `<a>` is
+also valid HTML5 (the "transparent" content model for `<a>` explicitly permits flow content,
+unlike HTML4's stricter inline-only rule) and is not a new/exotic pattern — this repo already
+nests non-`Text` children (`Ionicons`) inside `<Link>` before this change; the only difference now
+is one more layer. Keyboard reachability and focus order are unaffected — the focusable element is
+still exactly one `<a>` per destination, unchanged in count or position in the DOM/tab order.
+
+### Other components in this feature checked for the same mistake
+
+Per the task's instruction, checked every component in `008-scan-experience` that could plausibly
+apply flex styles to a component rendering an inline web element:
+
+| Component | Uses `<Link>`? | Verdict |
+|---|---|---|
+| `ShellHeader.tsx` | No — `View` only | Not affected |
+| `TopRightControls.tsx` | No — `Pressable`/`View` only (`Pressable` renders a `<div>` on web via `react-native-web`, which defaults to flex-friendly block behavior, not `inline`) | Not affected |
+| `ScanEntryCard.tsx` | No — `Pressable`/`Text` only | Not affected |
+| `FoundCardPanel.tsx` | No — `Pressable`/`View`/`Text` only throughout (condition chips, stepper, toggle, links) | Not affected |
+| `CarteraPlaceholderScreen.tsx` / `TradesPlaceholderScreen.tsx` / `PerfilPlaceholderScreen.tsx` | No — no `Link`/`Pressable` at all, `View`/`Text` only | Not affected |
+| `HomeScreen.tsx` | No — no `Link`/`Pressable` beyond what `ScanEntryCard` already covers | Not affected |
+| `WebBottomBarNav.tsx`, `WebSidebarNav.tsx` | Yes | **Fixed this run** |
+
+One more `<Link>` exists in the repo — `SignInForm.tsx`'s "Create account" link — but it belongs
+to `005-login`, a different feature, out of this task's scope. Checked anyway for completeness:
+its `style={styles.createAccountLink}` wraps a single string child (no icon, no multi-child flex
+layout), so it isn't exhibiting this bug — there's no `gap`/`alignItems`/`justifyContent`/
+`flexDirection` on it to be silently ignored. Not touched.
+
+### Files changed
+
+- `src/features/navigation/WebBottomBarNav.tsx` — moved `alignItems`/`justifyContent`/`gap` off
+  `styles.link` onto a new `styles.linkContent`, applied to a new `<View>` wrapping the
+  `Ionicons`+`Text` children; added `display: "flex"` to `styles.link`. Added a header comment
+  explaining the bug and fix, referencing commit `39c3f02`.
+- `src/features/navigation/WebSidebarNav.tsx` — same shape: moved `flexDirection`/`alignItems`/
+  `gap` off `styles.link` onto a new `styles.linkContent` View wrapper; added `display: "flex"`
+  to `styles.link`. Same header comment pattern.
+- `src/features/navigation/WebBottomBarNav.test.tsx` — added a structural regression test
+  ("wraps each link's icon and label in a real View container, not as the Link's direct
+  children") that asserts `link.children` has length 1 and that the single child is a real
+  `View` containing the label text, using `findAllByType(View)` (the same technique
+  `TopRightControls.test.tsx` already established for verifying drawn structure) — not a style-
+  object assertion. Added `View`/`within` imports.
+- `src/features/navigation/WebSidebarNav.test.tsx` — identical regression test, same technique.
+- `src/features/navigation/README.md` — updated the `WebSidebarNav.tsx`/`WebBottomBarNav.tsx`
+  bullet to document the `display: "flex"` requirement and the `View`-wrapper structure, and
+  records that this fixes a bug that shipped in `39c3f02` and was only caught by a live browser
+  render.
+
+### Regression test verified to actually catch the bug (not just re-describe the fix)
+
+Before finalizing, stashed the two component changes (kept the two test file changes) and re-ran
+the new tests against the original, buggy component code:
+
+```
+FAIL src/features/navigation/WebSidebarNav.test.tsx
+  ● WebSidebarNav › wraps each link's icon and label in a real View container, not as the Link's direct children
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+FAIL src/features/navigation/WebBottomBarNav.test.tsx
+  ● WebBottomBarNav › wraps each link's icon and label in a real View container, not as the Link's direct children
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 13 passed, 15 total
+```
+
+Both new tests fail against the pre-fix code (`Ionicons` + `Text` as two direct children of
+`Link`) and pass against the fixed code (one `View` child). Restored the component fix
+(`git stash pop`) after confirming this.
+
+### `npx tsc --noEmit` — full repo, after the fix
+
+```
+$ npx tsc --noEmit
+(no output — clean)
+```
+
+### `npm test` — full repo, after the fix
+
+```
+Test Suites: 72 passed, 72 total
+Tests:       480 passed, 480 total
+Snapshots:   0 total
+```
+
+480 (was 476 before this run) — the four new tests are the two structural regression tests
+above plus nothing else; no pre-existing test needed a change.
+
+### Level 4 (build check) plus a direct inspection of the compiled web bundle
+
+Ran `npx expo export --platform web` to a scratch directory (outside the repo) — exported
+cleanly, 37 files, no errors. Since `jest-expo`'s default test environment cannot verify actual
+CSS/layout behavior (see "Fix" section above), inspected the *compiled* bundle's JS directly —
+the closest thing to "what a real browser will execute" available without a live browser tool in
+this environment — and confirmed both fixes are present verbatim in the shipped code:
+
+```
+// WebBottomBarNav's compiled StyleSheet.create(...) call:
+link:{display:"flex",alignItems:"center",justifyContent:"center",minWidth:44,minHeight:44,
+  paddingHorizontal:p.space.sm,paddingVertical:p.space.xs},
+linkContent:{alignItems:"center",justifyContent:"center",gap:2}
+
+// WebSidebarNav's compiled StyleSheet.create(...) call:
+link:{display:"flex",alignItems:"center",minWidth:44,minHeight:44,paddingVertical:12,
+  paddingHorizontal:12,borderRadius:8},
+linkContent:{flexDirection:"row",alignItems:"center",gap:h.space.sm}
+```
+
+Also confirmed the compiled JSX tree shape directly in the bundle:
+`(0,x.jsx)(l.Link,{...,style:j.link,children:(0,x.jsxs)(c.default,{style:j.linkContent,
+children:[(0,x.jsx)(n.Ionicons,{...}),(0,x.jsx)(s.default,{style:j.linkLabel,...})]})})` —
+`Link` wraps exactly one `View` (`c.default`), which wraps the icon and label. Deleted the
+scratch export directory afterward (not committed to the repo).
+
+### `./init.sh --skip-build`
+
+```
+RESULT: SUCCESS (8/8 stages passed)
+```
+
+Type-check clean, full test suite green (`--skip-build` used only because the fast path already
+had a manual `npx expo export --platform web` run moments earlier for the bundle inspection above
+— the two pre-existing `expo-doctor`/native-dependency-alignment warnings are unrelated outdated-
+package advisories, unchanged by this fix, and already present before this run).
+
+### Manual smoke check (Level 3) — disclosed gap, unchanged from every prior run in this feature
+
+**Not performed against a live browser in this environment.** `EXPO_PUBLIC_SUPABASE_URL`/
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty in `.env`, and no local backend responds on
+`localhost:3000` (confirmed with `curl`, connection refused). Per `docs/verification.md`'s "which
+live services to run" table, this means every destination behind the KYC gate — including both
+nav components fixed in this run — is genuinely unreachable in this environment; this is the same
+disclosed gap Run 10 already recorded ("this environment cannot reach any of the five shell
+destinations"). The compiled-bundle inspection above is the strongest verification available
+without that access, but it is not a substitute for an actual rendered browser confirming the
+icon/label gap is now visible and the tap target now measures ≥44×44 — that remains open per Run
+10's item 2 ("real keyboard-only navigation... never driven through an actual browser's focus
+engine") and item 4 ("a real 375px-wide browser resize... never a substitute for an actual
+rendered viewport").
+
+### Requirement traceability (this run)
+
+This is a bug fix to already-shipped, already-traced functionality (FR-001/FR-011/SC-002/SC-003,
+per `WebBottomBarNav.test.tsx`/`WebSidebarNav.test.tsx`'s own header comments) — no new
+functional requirement. The two new tests are regression coverage for the same FR-001/SC-002
+surface (destination links reachable and correctly structured), not a new FR.
+
+### Tasks now `[X]`
+
+No `tasks.md` task ID changes — this is a post-ship defect fix found by a live render, not a
+tracked task in `specs/008-scan-experience/tasks.md` (which was already 100% `[X]` before this
+run, per Run 10). No task line added or modified.
+
+### Deviations / notes for sign-off
+
+- **Extended the suggested fix** (nested `View` for `gap`/`alignItems`/`flexDirection`) with an
+  additional change the write-up explicitly asked to be verified rather than assumed: kept
+  `display: "flex"` on `<Link>`'s own style too, specifically to fix the tap-target risk the task
+  called out ("make sure the touch target stays on the element that is actually the link, not
+  only on an inner View"). Flagging this as a deviation from the literal suggested fix (which
+  didn't mention touching `<Link>`'s own `display`) for sign-off, even though it's a strict
+  improvement addressing the task's own explicit concern — see "Fix" section above for the full
+  reasoning on why the nested `View` alone would have left the tap target broken.
+- Also surfaces a previously-undetected defect (T033's tap-target floor was silently
+  non-functional on web this whole time, same root cause) that wasn't part of the original bug
+  report — documented above rather than silently folded in.
+- No other component in this feature exhibited the same mistake (see table above).
+- `src/features/identity/SignInForm.tsx`'s unrelated `<Link>` (feature `005-login`) was checked
+  and confirmed not affected, and left untouched as out of this task's scope.
