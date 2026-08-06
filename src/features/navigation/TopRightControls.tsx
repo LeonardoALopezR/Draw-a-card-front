@@ -13,6 +13,25 @@
 // established, tested pattern) is unchanged — only the visible control surface moves from a text
 // label to an icon/flag-badge. Every accessibilityLabel and the shared feedback text now read
 // from useTranslation(navCopy) (T003) instead of 004's hardcoded English literals.
+//
+// Layout fix (found by a live browser render, 2026-08-06 — the test suite passed with the bug
+// present, since RNTL doesn't measure real layout): 004 laid these four controls out as a
+// vertical column (`flexDirection: "column"`), which was fine when they sat in one screen's
+// corner. Once ShellHeader (T008) made this shell-wide chrome above all five destinations, the
+// column reserved the stack's full height on every page — ~285px of empty band on desktop,
+// ~450px of an 812px mobile viewport, before any page content. The four controls now lay out
+// horizontally (`flexDirection: "row"`) so the header is a compact bar. The one piece that
+// doesn't just fall out of "swap column for row": the inline "not yet available" feedback text
+// used to sit in-flow below its control (fine in a column — nothing else was to its side). In a
+// row, in-flow feedback text would widen its control's flex item and shove the other three
+// controls sideways every time it toggled on. Fixed by making feedback `position: "absolute"`,
+// anchored to its own control's bottom-right corner (`right: 0`, non-participating in layout) —
+// it now floats as a small bubble under the control that raised it without moving its siblings,
+// consistent with SC-005's "never a silent no-op" (still visible) and the "no layout shift"
+// half of this fix. `zIndex` on the bubble keeps it painted above the page content that follows
+// ShellHeader in the DOM on web (CSS stacking: a positioned descendant with a numeric z-index
+// paints above later, non-positioned siblings within the same stacking context, regardless of
+// DOM order — see MDN's stacking-context painting-order algorithm).
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -112,7 +131,7 @@ function PlaceholderControl({ icon, accessibilityLabel, feedbackText }: Placehol
   const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   return (
-    <View style={styles.controlRow}>
+    <View style={styles.controlWrapper}>
       <Pressable
         onPress={() => setFeedbackVisible((prev) => !prev)}
         accessibilityRole="button"
@@ -128,7 +147,14 @@ function PlaceholderControl({ icon, accessibilityLabel, feedbackText }: Placehol
           </View>
         )}
       </Pressable>
-      {feedbackVisible ? <Text style={styles.feedback}>{feedbackText}</Text> : null}
+      {/* Absolutely positioned so it floats under its own control instead of widening this flex
+          item and pushing the other three controls sideways — see this file's top-of-file
+          layout-fix comment. */}
+      {feedbackVisible ? (
+        <Text style={styles.feedback} numberOfLines={1}>
+          {feedbackText}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -162,12 +188,15 @@ export function TopRightControls() {
 
 const styles = StyleSheet.create({
   stack: {
-    flexDirection: "column",
-    alignItems: "flex-end",
+    flexDirection: "row",
+    alignItems: "center",
     gap: space.sm,
   },
-  controlRow: {
-    alignItems: "flex-end",
+  // The positioning context for this control's absolutely-positioned feedback bubble (see the
+  // layout-fix comment at the top of this file). Every RN View is `position: "relative"` by
+  // default, so this is mostly documentation of intent, kept explicit rather than relied upon.
+  controlWrapper: {
+    position: "relative",
   },
   control: {
     minWidth: 44,
@@ -219,9 +248,26 @@ const styles = StyleSheet.create({
     height: FLAG_HEIGHT * 0.6,
     backgroundColor: FLAG_COLORS.usaBlue,
   },
+  // A small floating bubble under the control that raised it (see the layout-fix comment at the
+  // top of this file) — `position: "absolute"` takes it out of flow so it never widens this
+  // control's flex item, `right: 0` anchors it to the control's own right edge so it grows
+  // leftward rather than off the right edge of the viewport for the rightmost ("messages")
+  // control, and `zIndex` keeps it painted above the page content that follows ShellHeader in
+  // the DOM on web.
   feedback: {
+    position: "absolute",
+    top: 48,
+    right: 0,
+    zIndex: 20,
+    maxWidth: 160,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xs,
+    borderRadius: radius.row,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.surface,
     fontSize: 11,
     color: colors.text.secondary,
-    marginTop: 2,
+    textAlign: "right",
   },
 });

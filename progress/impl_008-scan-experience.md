@@ -2791,3 +2791,215 @@ run, per Run 10). No task line added or modified.
 - No other component in this feature exhibited the same mistake (see table above).
 - `src/features/identity/SignInForm.tsx`'s unrelated `<Link>` (feature `005-login`) was checked
   and confirmed not affected, and left untouched as out of this task's scope.
+
+---
+
+## Run — `TopRightControls`/`ShellHeader` vertical-column layout bug (2026-08-06)
+
+**Caught by a live browser render, not the test suite.** `TopRightControls.tsx` (T007) laid its
+four icon controls out as `flexDirection: "column"` — reasonable in `004-home-scan-shell`, where
+they sat in one screen's top-right corner, but `ShellHeader.tsx` (T008) later made that stack
+shell-wide chrome above all five destinations (Run covering T009–T012). As shell-wide chrome, the
+column reserved the stack's full height as empty space on *every* page before any page content —
+measured in a real browser: ~285px on desktop, ~450px of an 812px mobile viewport (over half the
+screen). Jest/RNTL doesn't run a real layout engine (`react-test-renderer`, not
+`react-native-web`-in-a-browser), so nothing in the 483-test suite could have caught this — it only
+verified the *presence* of `flexDirection: "column"` and the four controls' individual props, never
+what a browser actually does with that style shell-wide. Same class of gap as the
+`WebSidebarNav`/`WebBottomBarNav` bug fixed above in commit `39c3f02`, different mechanism (a
+correctly-flexing `View` laid out in a shape nobody re-checked at the new shell-wide scale, vs. a
+`flexDirection` silently ignored by a web-`inline` element).
+
+### Fix
+
+- **`src/features/navigation/TopRightControls.tsx`**
+  - `styles.stack`: `flexDirection: "column"` → `"row"`, `alignItems: "flex-end"` → `"center"`
+    (all four controls are the same height; center is the correct cross-axis alignment for a
+    row of icon buttons, not the old column's right-edge alignment).
+  - Renamed `styles.controlRow` → `styles.controlWrapper` (it's no longer literally "a row" once
+    the parent is one) and made it the positioning context (`position: "relative"`, RN's default
+    anyway, kept explicit for clarity) for each control's feedback bubble.
+  - **The one piece that doesn't fall out of a plain column→row swap**: the "press → inline 'not
+    yet available' feedback" text. In the old column, feedback sat in-flow directly below its
+    control with nothing beside it to disturb. In a row, in-flow feedback text would widen that
+    control's flex item and visibly shove the other three controls sideways every time it toggled
+    on/off — the exact regression the task called out as most likely. **Decision**: made the
+    feedback `Text` `position: "absolute"` (removed from flex flow entirely), anchored `top: 48`
+    (just below the 44px control), `right: 0` (so it grows leftward under its own control rather
+    than off the right edge of the viewport for the rightmost "messages" control, given the whole
+    row is itself right-aligned by `ShellHeader`'s `justifyContent: "flex-end"`), with a small
+    `bg.surface`/`border.subtle` chip background + `zIndex: 20` so it reads as a legible floating
+    bubble rather than a bare label overlapping whatever page content sits just below the header
+    on web (`zIndex` matters here: CSS paints a positioned descendant with a numeric `z-index`
+    above later, non-positioned DOM siblings within the same stacking context regardless of DOM
+    order — the header renders before the page `Slot` in the DOM, so without it the feedback bubble
+    could paint underneath the page content that follows).
+  - No change to `accessibilityRole="button"`, `accessibilityLabel`, or the ≥44×44 `control` style
+    — all untouched, still per-control, still icon-first, still translated via
+    `useTranslation(navCopy)`.
+- **`src/features/navigation/ShellHeader.tsx`**
+  - `styles.row`: `alignItems: "flex-start"` → `"center"`. That value dated from when
+    `TopRightControls` was a tall column the row needed to pin to the top rather than
+    stretch/center; with a single, uniformly-tall row child, `"flex-start"` and `"center"` render
+    identically today, but `"center"` is the one that stays correct if this header ever grows a
+    second, differently-sized child (documented inline rather than left as stale reasoning).
+    `justifyContent: "flex-end"` and `paddingBottom: 16` both still make sense unchanged — the
+    header should still right-align its content and still leave breathing room before the page
+    content that follows.
+- Header comments added to both files explaining the bug, the measured impact, and the fix
+  (mirrors this file's existing convention for prior live-render-caught bugs).
+
+### Other callers of `TopRightControls` checked
+
+`grep -rl "TopRightControls"` across `src/` and `app/` turns up exactly one importer besides the
+component's own file/test: `src/features/navigation/ShellHeader.tsx`. No other caller depended on
+the old column layout — nothing was silently changed out from under a second consumer.
+
+### Files changed
+
+- `src/features/navigation/TopRightControls.tsx` — `stack` row layout, `controlRow` →
+  `controlWrapper` rename + `position: "relative"`, feedback bubble now `position: "absolute"`
+  with an anchored, backgrounded, z-indexed presentation; top-of-file comment explaining the fix.
+- `src/features/navigation/TopRightControls.test.tsx` — new/updated tests (below).
+- `src/features/navigation/ShellHeader.tsx` — `row.alignItems: "flex-start"` → `"center"`,
+  top-of-file comment explaining the fix.
+- `src/features/navigation/ShellHeader.test.tsx` — new test (below).
+
+### Tests written/updated — and why they'd actually catch this regression
+
+Per the task's explicit steer (same standard as the `39c3f02` fix above): prefer assertions that
+would actually catch a real rendered-structure regression over ones that just re-assert a style
+key exists. Two things make the row/column assertions here meaningfully different from a bare
+"style key exists" check, unlike the earlier `<Link>` bug: `View` is a genuine flex container on
+every platform by default (RN's Yoga layout engine, and react-native-web's `View` primitive,
+`display: flex` unconditionally) — there's no web-`inline`-style trap here where the style is
+present but silently ignored. So `flexDirection`/`position` assertions against a `View`'s style are
+a real proxy for what a browser/simulator will render, not the same class of false-positive the
+`Link`/`Text` bug exposed.
+
+- **`TopRightControls.test.tsx`**
+  - Renamed the existing order test from "top-to-bottom" to "left-to-right" (FR-011) — same
+    assertions, corrected wording now that the row is horizontal.
+  - New: `"lays the four controls out horizontally as a row, not stacked as a column"` — asserts
+    `StyleSheet.flatten(topRightControls.props.style).flexDirection === "row"` on the actual
+    rendered container (FR-011, the fix's core claim).
+  - New: `"shows feedback as an out-of-flow bubble that does not shift the other three controls"`
+    — asserts the feedback `Text`'s flattened style has `position: "absolute"` (the property that
+    actually removes it from flex flow) **and** that the other three buttons' accessibility-label
+    order is byte-for-byte unchanged before vs. after one control's feedback is activated
+    (FR-011, SC-005 — "never a silent no-op" for the feedback itself, while genuinely proving the
+    "must not shift siblings" requirement rather than assuming it from the style alone).
+- **`ShellHeader.test.tsx`**
+  - New: `"renders TopRightControls as a horizontal row, keeping the header a compact bar"` — the
+    same `flexDirection === "row"` assertion, but at the `ShellHeader` integration level (the
+    actual component all five destinations render), not only inside `TopRightControls`' own
+    isolated unit test.
+
+### Regression tests verified to actually catch the bug (mutation test)
+
+Stashed the two component changes (`git stash push -- TopRightControls.tsx ShellHeader.tsx`, kept
+the two test-file changes) and re-ran against the original, buggy (column-layout) component code:
+
+```
+● TopRightControls › lays the four controls out horizontally as a row, not stacked as a column
+  expect(received).toBe(expected)
+  Expected: "row"
+  Received: "column"
+
+● TopRightControls › shows feedback as an out-of-flow bubble that does not shift the other three controls
+  (position assertion — fails: old feedback style has no `position` key at all)
+
+● ShellHeader › renders TopRightControls as a horizontal row, keeping the header a compact bar
+  expect(received).toBe(expected)
+  Expected: "row"
+  Received: "column"
+
+Test Suites: 2 failed, 2 total
+Tests:       3 failed, 19 passed, 22 total
+```
+
+All three new tests fail against the pre-fix code and pass against the fixed code. Restored the
+fix (`git stash pop`) and confirmed `git status` matched the pre-stash diff exactly.
+
+### `npx tsc --noEmit`
+
+```
+(no output — clean)
+```
+
+### `npm test` — full repo, after the fix
+
+```
+Test Suites: 72 passed, 72 total
+Tests:       483 passed, 483 total
+Snapshots:   0 total
+Time:        1.984 s, estimated 2 s
+```
+
+483 (was 480 before this run) — the three new tests above, plus nothing else changed; no
+pre-existing test needed modification beyond the two renamed titles already noted.
+
+### `./init.sh`
+
+```
+RESULT: SUCCESS (10/10 stages passed)
+```
+
+Type-check clean, full suite green, all three bundle-export smoke checks (web/iOS/Android) green.
+The two `expo-doctor`/native-dependency-alignment warnings are the same pre-existing,
+unrelated-outdated-package advisories every prior run in this feature has already flagged —
+unchanged by this fix.
+
+### Manual smoke check (Level 3) — web only, disclosed gap same shape as every prior run
+
+Ran `npm run web` (Metro/`expo start --web`) against this environment's `.env`
+(`EXPO_PUBLIC_API_URL` + `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` all set — same
+"both services configured" row `docs/verification.md`'s table describes). Metro bundled cleanly
+(`Web Bundled ... node_modules/expo-router/entry.js`, no errors) — confirms the change doesn't
+crash on boot. This session's tool list has no browser-automation/screenshot tool (unlike whatever
+render caught the original bug, which happened outside this session), so — as the strongest
+available substitute, following the same technique already used for the `39c3f02` fix above —
+fetched the actual dev-server-compiled bundle (`curl .../node_modules/expo-router/entry.bundle...`)
+and located the compiled `TopRightControls.tsx` module verbatim in it. Confirmed the exact shipped
+`StyleSheet.create` call matches the source: `stack: { flexDirection: "row", alignItems: "center",
+gap: theme.space.sm }`, `controlWrapper: { position: "relative" }`, `feedback: { position:
+"absolute", top: 48, right: 0, zIndex: 20, ... }` — i.e., what a real browser will actually receive
+and render is the fixed code, not a stale cache or an unbundled edit.
+
+**What this does not cover** (disclosed, same class of gap Run 8/9's own "genuinely unverified"
+list above already names for this feature): this environment cannot reach any of the five shell
+destinations behind the KYC gate (no way to complete Supabase sign-in from this session), and has
+no real browser/simulator to visually confirm the actual pixel layout, the feedback bubble's
+readability against real page content, or that it truly doesn't visually overlap adjacent controls
+when several are active in the mobile 375px width — those remain open the same way item 4 in the
+"disclosed, unverified in this environment" list above already does. The compiled-bundle
+inspection above proves the *code that will run* is correct; it is not a substitute for an actual
+rendered viewport.
+
+### Requirement traceability (this run)
+
+Bug fix to already-shipped, already-traced functionality (FR-011/FR-012/SC-004/SC-005/SC-006, per
+`TopRightControls.test.tsx`'s own header comment) — no new functional requirement. The three new
+tests are regression coverage for the same FR-011 surface (four controls, correct order, visible
+feedback that never silently fails), not a new FR.
+
+### Tasks now `[X]`
+
+No `tasks.md` task ID changes — T007/T008 were already `[X]` before this run (this feature's
+`tasks.md` was already 100% complete per Run 10). This is a post-ship defect fix found by a live
+render, not a tracked task.
+
+### Deviations / notes for sign-off
+
+- **Feedback presentation is a judgment call, not spelled out in spec.md/plan.md**: the task
+  explicitly asked "decide how the feedback presents in a row layout and say what you chose" —
+  chose an absolutely-positioned, right-anchored bubble under each control (see "Fix" above for
+  the full reasoning). Flagging for sign-off since this is new visual treatment beyond what any
+  prior task/spec text described, even though it reuses only existing `src/theme` tokens and no
+  new dependency.
+- `ShellHeader.tsx`'s `alignItems: "flex-start"` → `"center"` change is currently a no-op given
+  today's single, uniformly-tall child — kept as a forward-looking correctness fix per the task's
+  explicit ask to check whether that style "still makes sense," not because it changes anything
+  observable today. Flagging in case a reviewer would rather leave it untouched until it matters.
+- No `tasks.md`/`spec.md`/`plan.md` edits made — this run stayed inside the two files + two test
+  files the task named.
