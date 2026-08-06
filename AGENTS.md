@@ -28,7 +28,7 @@
 | `specs/<feature>/spec.md` + `plan.md` + `tasks.md` | Spec Kit's spec / technical plan / task breakdown for one feature — platform differences noted inline, not as separate docs | Before implementing any `"sdd": true` feature |
 | `.specify/memory/constitution.md` | Binding architecture decisions (Expo/RN, `src/domain`/`src/lib`/`src/features` boundary), tech stack, non-negotiable principles | Before any implementation decision |
 | `docs/conventions.md` | Code style, naming, component structure | Before writing code |
-| `docs/verification.md` | What counts as tested, verification levels, test-tooling status, anti-patterns | Before declaring a task `done` |
+| `docs/verification.md` | What counts as tested, verification levels, which live services (Supabase / local backend / both) a manual check may run against and what each leaves uncovered, anti-patterns | Before declaring a task `done`, and before any manual smoke check |
 | `CHECKPOINTS.md` | Repo-hygiene / harness-health self-audit (distinct from code review) | `code-reviewer` walks this before approving |
 | `.claude/skills/speckit-*/SKILL.md` | The actual SDD process definition (specify → clarify → plan → tasks → implement → analyze → checklist) | Before writing or reading a spec |
 | `.claude/skills/feature-branch/SKILL.md` | Sync `main` and cut/resume the feature's own branch (one branch per feature, named after the feature id) | At `pending` → `in_progress`, before the first `task-implementer` call, and when resuming a feature in a fresh session |
