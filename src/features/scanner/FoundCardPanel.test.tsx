@@ -206,6 +206,33 @@ describe("FoundCardPanel", () => {
     expect(style.flexWrap).toBe("wrap");
   });
 
+  // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): "Condición actual" had no
+  // copy key and was never rendered above the chip row — grep-confirmed absent, and no test ever
+  // asserted for it, so 491/491 tests passed with the label missing entirely.
+  it('renders the "Condición actual" label above the condition-chip row', () => {
+    renderPanel();
+
+    expect(screen.getByText(scanCopy.es.conditionLabel)).toBeTruthy();
+  });
+
+  // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): the "Gradeada" toggle's
+  // visible track used to carry both `height: 28` and `minHeight: 44` on the same View — on
+  // native, `minHeight` wins, so the track actually rendered ~44pt tall and overlapped the
+  // condition-chip row beneath it. The track is now a separate inner View from the Pressable's
+  // own 44x44 touch target, so this asserts the visible track's *own* flattened style is genuinely
+  // 28pt tall with no conflicting `minHeight` fighting it — the exact property collision that
+  // caused the bug — while the outer Pressable (asserted in the tap-target test below) still meets
+  // the ≥44x44 floor.
+  it('renders the "Gradeada" toggle\'s visible track at 28pt tall with no minHeight override', () => {
+    renderPanel();
+
+    const track = screen.getByTestId("found-card-graded-track");
+    const style = StyleSheet.flatten(track.props.style);
+
+    expect(style.height).toBe(28);
+    expect(style.minHeight).toBeUndefined();
+  });
+
   // Every interactive element (chips, stepper buttons, toggle, links, Aceptar) keeps a real
   // ≥44x44 tap target (Constitution VII).
   it("keeps every interactive element at a minimum 44x44 tap target", () => {

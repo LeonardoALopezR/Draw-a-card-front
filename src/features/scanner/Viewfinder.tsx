@@ -164,6 +164,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: space.sm,
   },
+  // Checked alongside the `foundHeading` contrast fix above (2026-08-06): `viewfinder.hintText`
+  // already clears WCAG AA here (~7.6:1 against `viewfinder.bg`, well above the 4.5:1 floor — see
+  // src/theme/contrast.test.ts's existing "viewfinder.hintText on viewfinder.bg" guard), so the
+  // idle-state hint needed no change.
   hint: {
     color: colors.viewfinder.hintText,
     fontSize: 14,
@@ -186,8 +190,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
+  // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): this used to read
+  // `colors.text.primary` (#10281A, near-black) on `colors.viewfinder.bg` (#0B0F0C, near-black) —
+  // a ~1.23:1 contrast ratio (src/theme/contrast.ts's `contrastRatio`), far below the WCAG AA
+  // 4.5:1 floor (Constitution VII) and effectively invisible on device. `colors.brand.primary`
+  // (the same token the `checkmark-circle` icon directly above already uses) clears ~14.9:1
+  // against `viewfinder.bg` — see src/theme/contrast.test.ts's regression guard.
   foundHeading: {
-    color: colors.text.primary,
+    color: colors.brand.primary,
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",

@@ -3138,3 +3138,184 @@ additional coverage of the same requirements' "thumbnail" clause, not a new requ
   outside the two files updated here (grep-confirmed).
 - Tasks.md itself was not edited — none of its task IDs describe this follow-up, so there was
   nothing to mark `[X]` or otherwise change there.
+
+---
+
+## Follow-up run (2026-08-06): four defects found on a real iPhone 17 Pro simulator, invisible to the 491-test suite
+
+Scope: four disclosed native/visual defects in already-`done` feature work — no `tasks.md` task
+IDs describe these fixes (they're bugs in T009/T014/T015's implementations, not new task scope),
+so none is marked `[X]`; this section is the record instead. Each fix below is paired with a new
+test, and each new test was verified by hand to genuinely fail against the pre-fix code (temporarily
+reverted the source fix, kept the new test, ran it red, then restored the fix and re-ran it green —
+not just "written to plausibly cover the bug").
+
+### 1. "Gradeada" toggle rendered ~44pt tall instead of 28pt, overlapping the condition chip row
+
+**File**: `src/features/scanner/FoundCardPanel.tsx`. The single `Pressable` carrying
+`styles.toggleTrack` set `width: 48, height: 28` *and* `minHeight: 44` on the same View. On native,
+Yoga's `minHeight` wins over a shorter explicit `height`, so the visible pill rendered ~44pt tall —
+a large lime pill overlapping "Casi Nuevo" beneath it. The inline comment claiming the tap target
+was "padded out via alignItems/justifyContent centering" was simply wrong; centering doesn't shrink
+a View below its `minHeight`.
+
+**Fix**: split the single View into two — an outer `Pressable` (`styles.toggleTouchTarget`:
+`minHeight: 44, minWidth: 44`, centered) carrying the real ≥44×44 tap target and all the
+accessibility props, and an inner `View` (`styles.toggleTrack`, now genuinely `height: 28` with no
+`minHeight` on it) carrying the visible pill. Corrected the misleading comment. The inner track got
+its own `testID="found-card-graded-track"` so its visible size is independently assertable.
+
+**Test added** (`FoundCardPanel.test.tsx`, `renders the "Gradeada" toggle's visible track at 28pt
+tall with no minHeight override`): queries the track by that new testID and asserts
+`style.height === 28` and `style.minHeight === undefined`. **Verified to catch the bug**: reverted
+the component back to the single-View structure (restoring `minHeight: 44` alongside `height: 28`
+on the same style) — the test failed with `Unable to find an element with testID:
+found-card-graded-track` (the merged structure has no such element). Restored the fix, test passes.
+The pre-existing 44×44 tap-target test (`keeps every interactive element at a minimum 44x44 tap
+target`) still queries `found-card-graded-toggle` (now the outer Pressable) and continues to pass —
+the tap target itself didn't regress, only the previously-untested visible-size claim.
+
+### 2. "Condición actual" section label missing entirely
+
+**Files**: `src/domain/i18n/copy/scan.ts`, `src/domain/i18n/copy/scan.test.ts`,
+`src/features/scanner/FoundCardPanel.tsx`, `FoundCardPanel.test.tsx`. Grep-confirmed before this
+fix: no `conditionLabel`-shaped key existed anywhere in `scan.ts`, and `FoundCardPanel.tsx` rendered
+the condition-chip row with no heading above it — traced back to `tasks.md` T006's key list and
+T014's description, neither of which ever named this label, so no review or test ever missed it.
+
+**Fix**: added `conditionLabel` to both locales (`es`: "Condición actual", `en`: "Current
+condition"), and render `<Text style={styles.fieldLabel}>{t("conditionLabel")}</Text>` immediately
+above the chip row, wrapped in a new `conditionSection` style (`gap: space.sm`) — the same
+label-over-content shape `gradedField` already establishes for "Gradeada" and the grade-value box,
+reusing the existing `fieldLabel` (`typography.label.field`) treatment "Cantidad" and "Precio de
+mercado" already use, not a new style.
+
+**Tests added**:
+- `scan.test.ts`: `has the 'Condición actual' section label above the condition-chip row in both
+  locales` — asserts the exact Spanish/English strings.
+- `FoundCardPanel.test.tsx`: `renders the "Condición actual" label above the condition-chip row` —
+  asserts `screen.getByText(scanCopy.es.conditionLabel)` is truthy.
+
+**Verified to catch the bug**: removed the label-rendering block from the component (kept the copy
+key) — the component test failed with `Unable to find an element with text: Condición actual`.
+Restored the fix, test passes.
+
+### 3. Native tab bar's active tint was iOS system-default blue, not brand lime
+
+**File**: `app/(app)/_layout.tsx`. `<Tabs screenOptions={...}>` set no
+`tabBarActiveTintColor`/`tabBarInactiveTintColor`, so iOS fell back to system blue — disagreeing
+with the mockups (active destination in brand lime) and with the rest of the shell.
+
+**Contrast check performed, not eyeballed** (`node` one-off using the exact WCAG formula
+`src/theme/contrast.ts` implements, then re-verified via the real `contrastRatio` export):
+- `colors.brand.primary` (#C7F24C, the lime) against `colors.bg.surface` (#FFFFFF, the closest
+  theme token to iOS's near-white default tab-bar background): **~1.29:1** — far below the WCAG AA
+  4.5:1 floor (Constitution VII). Using the lime here would trade one invisible-text bug (defect 4
+  below) for another.
+- `colors.text.link` (#247B3D — this repo's existing "actionable/brand-accent green" token, already
+  used for `FoundCardPanel.tsx`'s "Cambiar" link and `SignInForm.tsx`'s "forgot password") against
+  `bg.surface`: **~5.28:1**. Against `colors.bg.page` (#ECEDEE, a plausible Android tab-bar
+  background): **~4.51:1**. Both clear the 4.5:1 floor.
+- Chose `colors.text.link` for `tabBarActiveTintColor` and the existing `colors.text.secondary` for
+  `tabBarInactiveTintColor` (already the app's established inactive/secondary-text token,
+  ~5.36:1 against `bg.surface`). Documented the rejected-lime reasoning inline in `_layout.tsx`'s
+  comment so a future edit doesn't reintroduce it without re-checking contrast.
+
+**Deviation flagged for the human**: the brief's "brand lime" for the active tab is not what
+shipped — `text.link` (dark green) was substituted because the lime literally fails contrast
+against a light tab-bar background. This mirrors defect 4's same class of problem in the opposite
+direction (light-on-light here vs. dark-on-dark there). No raw hex was introduced either way.
+
+**Test added** (`src/features/navigation/AppNativeLayout.test.tsx`, new describe block): shallow-
+renders `<AppTabsLayout />` (existing pattern in this file, no `NavigationContainer` needed) and
+asserts `screenOptions.tabBarActiveTintColor === colors.text.link` and
+`screenOptions.tabBarInactiveTintColor === colors.text.secondary`, plus a second test that computes
+`contrastRatio(activeTint, colors.bg.surface)` and `contrastRatio(activeTint, colors.bg.page)` and
+asserts both `>= 4.5` — so a future change to either token value, not just the assignment itself,
+still has to clear AA. **Verified to catch the bug**: reverted `_layout.tsx`'s `<Tabs>` back to
+`screenOptions={{ headerShown: true, header: () => <ShellHeader /> }}` (no tint props) — the first
+test failed with `Expected: "#247B3D", Received: undefined`, and the second failed with a
+`TypeError` inside `contrast.ts`'s `hexToRgb` (`undefined.replace`) since `activeTint` was
+`undefined`. Restored the fix, both pass.
+
+### 4. "¡Carta encontrada!" heading unreadable on the viewfinder's near-black background
+
+**File**: `src/features/scanner/Viewfinder.tsx`. `foundHeading` used `color: colors.text.primary`
+(#10281A) on `colors.viewfinder.bg` (#0B0F0C) — computed contrast **~1.23:1**, effectively
+invisible, versus the `checkmark-circle` icon directly above it which already correctly used
+`colors.brand.primary`.
+
+**Fix**: changed `foundHeading`'s color to `colors.brand.primary` — the same token the icon above it
+already uses, computed contrast **~14.92:1** against `viewfinder.bg`, comfortably clearing WCAG AA
+(and AAA). Documented the before/after ratios inline.
+
+**Idle-state hint checked too** (`"Apunta la cámara a la carta"`, `styles.hint`): already uses
+`colors.viewfinder.hintText` (#9CA3AF) against `viewfinder.bg`, computed contrast **~7.60:1** —
+clears AA comfortably (in fact clears AAA's 7:1 floor too). No change needed; documented this
+finding inline in the component and in the report here rather than leaving it unstated.
+
+**Tests added**:
+- `src/theme/contrast.test.ts`: new regression entry `brand.primary on viewfinder.bg (the
+  found-state heading, spec 008-scan-experience FR-004)` — guards the token pairing itself.
+- `Viewfinder.test.tsx`: `renders the found-state heading in a color that clears WCAG AA against the
+  viewfinder background` — renders `state="found"`, flattens the heading `Text`'s style, asserts
+  `style.color === colors.brand.primary` *and* independently recomputes
+  `contrastRatio(style.color, colors.viewfinder.bg) >= 4.5` from the actual rendered style (not just
+  the token in isolation) — so this fails both on a color regression and on a future token-value
+  drift.
+
+**Verified to catch the bug**: reverted `foundHeading.color` back to `colors.text.primary` — the
+`Viewfinder.test.tsx` test failed with `Expected: "#C7F24C", Received: "#10281A"`. Restored the fix,
+test passes. (`contrast.test.ts`'s own regression entry would also have failed on this pairing had
+the token itself regressed, independent of the component.)
+
+### Verification
+
+- `npx tsc --noEmit` — clean, no errors.
+- `npm test` — **73 suites, 498 tests, all green** (491 pre-existing + 7 new: 1 in
+  `scan.test.ts`, 2 in `FoundCardPanel.test.tsx`, 1 in `contrast.test.ts`, 1 in
+  `Viewfinder.test.tsx`, 2 in `AppNativeLayout.test.tsx`).
+- Each new test individually hand-verified to fail against the pre-fix source (see each defect's
+  "Verified to catch the bug" note above) — this is the direct answer to "the suite passes 491/491
+  with the bug present": each addition closes exactly the gap that let its defect through.
+- `./init.sh` (no `--skip-*` flags) — `RESULT: SUCCESS (10/10 stages passed)`. Type-check clean;
+  test suite green; web/iOS/Android bundle exports all clean. The two `WARN`s (`expo-doctor`
+  outdated-dependency advisory; native-dependency-version drift for `expo-image-picker`/
+  `react-native`/`react-native-safe-area-context`/`@types/react`/`typescript`) are pre-existing and
+  unrelated to this change (none of the flagged packages were touched).
+- **Level 3 (manual smoke check) — partial, gap disclosed, same trap this file has recorded before**:
+  ran `npx expo start --web` with no Supabase/backend service configured in this environment
+  (`.env` has an empty `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`, no backend at
+  `localhost:3000`). Confirmed the web bundle serves (`HTTP 200`, real hydration HTML, no
+  server-side crash) — proving the JS changes don't break bundling — but every authenticated route
+  (Escanear, Inicio, the five-tab shell) redirects to `/login` before rendering, so none of the four
+  fixes was visually confirmed in a live browser this run, and the native tab-bar tint fix (defect
+  3) has no web equivalent to check regardless (native-only, `<Tabs>` is not rendered on web). No
+  headless-browser/screenshot tool was available in this session. This is the same disclosed
+  limitation recorded earlier in this file for KYC-gated screens — the strongest available
+  substitute is the real-rendered-output component tests above (Level 2) plus the hand-verified
+  red→green check against the actual pre-fix source for each one (stronger than the usual
+  "write a plausible test" bar, precisely because the task noted the existing suite missed these).
+  All four defects were originally found on a real iPhone 17 Pro simulator by the human, per the
+  task — this run could not independently re-confirm on a simulator/device (none available in this
+  environment); the fixes are grounded in exact computed contrast ratios and RN layout semantics
+  (`minHeight` overriding `height` in Yoga) rather than a re-observed device screenshot.
+
+### Requirement traceability (this run)
+
+| Requirement | Test |
+|---|---|
+| FR-008 (found-card panel fields, incl. condition-chip row) | `FoundCardPanel.test.tsx`: `renders the "Condición actual" label above the condition-chip row`; `scan.test.ts`: `has the 'Condición actual' section label...` |
+| FR-018 / Constitution VII (≥44×44 tap targets) | `FoundCardPanel.test.tsx`: `renders the "Gradeada" toggle's visible track at 28pt tall with no minHeight override` (paired with the pre-existing `keeps every interactive element at a minimum 44x44 tap target`, unchanged and still green) |
+| FR-001 (five destinations reachable) / Constitution VII (accessible by default) | `AppNativeLayout.test.tsx`: `sets tabBarActiveTintColor/tabBarInactiveTintColor from theme tokens...`; `the chosen active tint clears WCAG AA 4.5:1 against bg.surface and bg.page` |
+| FR-004 (branded viewfinder, found visual state) / Constitution VII | `Viewfinder.test.tsx`: `renders the found-state heading in a color that clears WCAG AA...`; `contrast.test.ts`: `brand.primary on viewfinder.bg (the found-state heading...)` |
+
+### Deviations from the original plan.md/spec.md requiring sign-off
+
+- **Defect 3's active-tab color is `colors.text.link` (dark green), not the mockups' literal brand
+  lime.** Disclosed and reasoned above — the lime fails WCAG AA against a light tab-bar background
+  (~1.29:1), and using it anyway would ship a fifth invisible-text defect. This is a genuine
+  deviation from the visual mockups, not a style preference; flagging for explicit sign-off per this
+  task's own instruction ("say what you chose and why").
+- No other deviations. `tasks.md` was not edited (these are bug fixes to already-`[X]` tasks, not
+  new task scope); no task ID changed state as a result of this run.

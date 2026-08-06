@@ -67,6 +67,14 @@ describe("scanCopy (FR-010, spec.md US4 AS2)", () => {
     expect(scanCopy.es.acceptedConfirmation).toBe("Carta agregada");
   });
 
+  // Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): the "Condición actual"
+  // section label above the condition-chip row had no copy key at all — this key never existed
+  // before, so this test is the regression guard going forward (FR-008, FR-017).
+  it("has the 'Condición actual' section label above the condition-chip row in both locales", () => {
+    expect(scanCopy.es.conditionLabel).toBe("Condición actual");
+    expect(scanCopy.en.conditionLabel).toBe("Current condition");
+  });
+
   // T006 (FR-008): the five condition-chip labels, one per ConditionOption
   // (src/domain/scanResults.ts).
   it("has the five condition-chip labels in both locales", () => {

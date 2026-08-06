@@ -56,6 +56,17 @@ describe("token contrast pairings clear WCAG AA 4.5:1 (FR-004, Recorded default 
     ).toBeGreaterThanOrEqual(AA_THRESHOLD);
   });
 
+  // Defect fix (specs/008-scan-experience, 2026-08-06, found on a real iPhone 17 Pro simulator):
+  // Viewfinder.tsx's found-state "¡Carta encontrada!" heading (FR-004) used to render
+  // `colors.text.primary` (near-black) on `colors.viewfinder.bg` (near-black) — ~1.23:1,
+  // effectively invisible. `colors.brand.primary` (already used for the `checkmark-circle` icon
+  // directly above the heading) is the fix — this pairing must stay green going forward.
+  it("brand.primary on viewfinder.bg (the found-state heading, spec 008-scan-experience FR-004)", () => {
+    expect(contrastRatio(colors.brand.primary, colors.viewfinder.bg)).toBeGreaterThanOrEqual(
+      AA_THRESHOLD
+    );
+  });
+
   it("text.link on bg.page, bg.surface, bg.surfaceMuted, accent.pillBg", () => {
     expect(contrastRatio(colors.text.link, colors.bg.page)).toBeGreaterThanOrEqual(AA_THRESHOLD);
     expect(contrastRatio(colors.text.link, colors.bg.surface)).toBeGreaterThanOrEqual(

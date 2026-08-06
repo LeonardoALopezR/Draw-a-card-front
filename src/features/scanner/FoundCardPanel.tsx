@@ -128,10 +128,24 @@ export function FoundCardPanel({
             accessibilityLabel={t("gradedLabel")}
             aria-checked={graded}
             accessibilityState={{ checked: graded }}
-            style={[styles.toggleTrack, graded ? styles.toggleTrackOn : null]}
+            style={styles.toggleTouchTarget}
             testID="found-card-graded-toggle"
           >
-            <View style={[styles.toggleThumb, graded ? styles.toggleThumbOn : null]} />
+            {/* Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): this View used to
+                carry the tap target itself (`width: 48, height: 28` AND `minHeight: 44` on the same
+                View) — on native, `minHeight` wins over the shorter explicit `height`, so the
+                *visible* track rendered ~44pt tall instead of the intended 28pt, overlapping the
+                condition-chip row beneath it. The visible track now lives on its own inner View
+                sized exactly to the 48x28 pill; `toggleTouchTarget` above (the actual Pressable)
+                is what's padded out to the ≥44x44 floor via minHeight/minWidth + centering, the
+                same `justifyContent`/`alignItems`-centering pattern this file's `linkButton` style
+                already establishes for a small visual control inside a larger tap target. */}
+            <View
+              style={[styles.toggleTrack, graded ? styles.toggleTrackOn : null]}
+              testID="found-card-graded-track"
+            >
+              <View style={[styles.toggleThumb, graded ? styles.toggleThumbOn : null]} />
+            </View>
           </Pressable>
         </View>
         <View style={styles.gradedField}>
@@ -144,33 +158,43 @@ export function FoundCardPanel({
         </View>
       </View>
 
-      <View
-        style={styles.conditionRow}
-        accessibilityRole="radiogroup"
-        testID="found-card-condition-row"
-      >
-        {CONDITION_OPTIONS.map((option) => {
-          const selected = option === condition;
-          const label = t(CONDITION_COPY_KEY[option]);
-          return (
-            <Pressable
-              key={option}
-              onPress={() => onSelectCondition(option)}
-              accessibilityRole="radio"
-              accessibilityLabel={label}
-              aria-checked={selected}
-              accessibilityState={{ checked: selected }}
-              style={[styles.conditionChip, selected ? styles.conditionChipSelected : null]}
-              testID={`found-card-condition-${option}`}
-            >
-              <Text
-                style={[styles.conditionChipText, selected ? styles.conditionChipTextSelected : null]}
+      {/* Defect fix (2026-08-06, found on a real iPhone 17 Pro simulator): the mockups' "Condición
+          actual" label above this chip row was never rendered at all — T006's key list and T014's
+          description both omitted it. Same fieldLabel/gap treatment `gradedField` above already
+          uses for a label-over-content pairing, not a new style. */}
+      <View style={styles.conditionSection}>
+        <Text style={styles.fieldLabel}>{t("conditionLabel")}</Text>
+        <View
+          style={styles.conditionRow}
+          accessibilityRole="radiogroup"
+          testID="found-card-condition-row"
+        >
+          {CONDITION_OPTIONS.map((option) => {
+            const selected = option === condition;
+            const label = t(CONDITION_COPY_KEY[option]);
+            return (
+              <Pressable
+                key={option}
+                onPress={() => onSelectCondition(option)}
+                accessibilityRole="radio"
+                accessibilityLabel={label}
+                aria-checked={selected}
+                accessibilityState={{ checked: selected }}
+                style={[styles.conditionChip, selected ? styles.conditionChipSelected : null]}
+                testID={`found-card-condition-${option}`}
               >
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
+                <Text
+                  style={[
+                    styles.conditionChipText,
+                    selected ? styles.conditionChipTextSelected : null,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.quantityRow}>
@@ -299,6 +323,18 @@ const styles = StyleSheet.create({
   fieldLabel: {
     ...typography.label.field,
   },
+  // The real ≥44x44 tap target (Constitution VII) — a separate outer wrapper from the visible
+  // track below, so the two sizes (44 touch / 28 visible) don't fight over the same View's
+  // height/minHeight the way the old single-View version did.
+  toggleTouchTarget: {
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+  // The visible pill — genuinely 28px tall, no `minHeight` on this View to fight the explicit
+  // `height` (that conflict was the bug: on native, `minHeight` wins over a shorter `height` on
+  // the same View, so the old single-View version rendered ~44pt tall here instead of 28pt).
   toggleTrack: {
     width: 48,
     height: 28,
@@ -306,10 +342,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border.input,
     justifyContent: "center",
     padding: 2,
-    minHeight: 44,
-    // The track itself is visually 28px tall (brief-scale), but the tap target is padded out to
-    // the 44x44 floor via alignItems/justifyContent centering the visible track — see
-    // `hitSlop`-free minHeight/minWidth pattern already used for SignInForm.tsx's link buttons.
     alignItems: "flex-start",
   },
   toggleTrackOn: {
@@ -337,6 +369,12 @@ const styles = StyleSheet.create({
   gradeValueText: {
     fontSize: typography.body.input.fontSize,
     color: colors.text.primary,
+  },
+  // Label-over-content pairing for the condition-chip row — same shape as `gradedField` above
+  // (fieldLabel, then the interactive content), so the "Condición actual" label reads consistently
+  // with the panel's other section labels rather than inventing a new treatment.
+  conditionSection: {
+    gap: space.sm,
   },
   // Wraps onto a second row when the five chips don't fit on one line (spec.md User Story 3 AS3
   // — the mobile mockup shows exactly four chips then "Fair" alone on a second row).
