@@ -12,6 +12,11 @@
 // react-native-web does not forward `accessibilityState` to the DOM on its own (see those files'
 // comments for the full investigation) — real accessible state, not just a background-color
 // change (Constitution VII).
+//
+// Human-requested follow-up (2026-08-06): the detail thumbnail now renders `card.thumbnailGradient`
+// via the shared `CardThumbnail.tsx` (an `expo-linear-gradient` wrapper) instead of a flat
+// `backgroundColor` swatch — the mockups specifically call out Dragón Eterno's detail thumbnail as
+// a purple gradient.
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { scanCopy } from "@/domain/i18n/copy/scan";
@@ -25,6 +30,8 @@ import {
 import { useTranslation } from "@/features/i18n/LocaleContext";
 import { PrimaryButton } from "@/features/ui/PrimaryButton";
 import { colors, PLAYFAIR_DISPLAY_BOLD, radius, shadowSurface, space, typography } from "@/theme";
+
+import { CardThumbnail } from "./CardThumbnail";
 
 export interface FoundCardPanelProps {
   readonly state: FoundCardState;
@@ -65,8 +72,9 @@ export function FoundCardPanel({
   return (
     <View style={[styles.panel, shadowSurface]} testID="found-card-panel">
       <View style={styles.headerRow}>
-        <View
-          style={[styles.thumbnail, { backgroundColor: card.thumbnailColorToken }]}
+        <CardThumbnail
+          gradient={card.thumbnailGradient}
+          size={64}
           testID="found-card-thumbnail"
         />
         <View style={styles.headerText}>
@@ -215,11 +223,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
-  },
-  thumbnail: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.row,
   },
   headerText: {
     flex: 1,

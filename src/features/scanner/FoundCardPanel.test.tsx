@@ -4,6 +4,7 @@
 // the component's own props-driven contract (Constitution IV).
 import fs from "fs";
 import path from "path";
+import { LinearGradient } from "expo-linear-gradient";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 
@@ -56,6 +57,12 @@ describe("FoundCardPanel", () => {
     renderPanel();
 
     expect(screen.getByTestId("found-card-thumbnail")).toBeTruthy();
+    // Human-requested follow-up (2026-08-06): the thumbnail is a real gradient (the mockups'
+    // "purple gradient" for Dragón Eterno), not a flat color — asserted via the underlying
+    // LinearGradient's `colors` prop, matching SAMPLE_CARDS[0]'s own thumbnailGradient.
+    expect(screen.UNSAFE_getByType(LinearGradient).props.colors).toEqual(
+      SAMPLE_CARDS[0].thumbnailGradient
+    );
     expect(screen.getByText("Dragón Eterno")).toBeTruthy();
     expect(screen.getByText("Genesis · GEN-001")).toBeTruthy();
     expect(screen.getByTestId("found-card-grade-pill")).toHaveTextContent("PSA 10");

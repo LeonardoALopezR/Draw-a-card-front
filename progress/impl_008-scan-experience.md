@@ -3003,3 +3003,138 @@ render, not a tracked task.
   observable today. Flagging in case a reviewer would rather leave it untouched until it matters.
 - No `tasks.md`/`spec.md`/`plan.md` edits made — this run stayed inside the two files + two test
   files the task named.
+
+---
+
+## Follow-up run (2026-08-06): Gradient card thumbnails (human-requested, ad hoc — not a tasks.md task ID)
+
+**Context**: The human explicitly asked for the three sample cards' thumbnails to render as
+gradients (per the mockup transcription in `feature_list.json`'s 008 notes — "a rounded gradient
+thumbnail" per row, Dragón Eterno's detail thumbnail specifically "a purple gradient with a dragon
+glyph") instead of the flat color swatches T002/T014/T022 shipped. This is not a `tasks.md` task
+ID; all of `tasks.md`'s tasks were already `[X]` before this run. No `tasks.md` line was
+(re)checked as part of this run — it's a direct, disclosed follow-up edit, not new task
+completion.
+
+### Dependency decision — no new dependency added
+
+**Checked first, per the instruction, whether `expo-linear-gradient` was already present**: it
+is. `package.json` already declares `"expo-linear-gradient": "~13.0.2"` and it is already
+**imported and used** in this exact codebase — `src/features/identity/LoginScreenChrome.tsx`
+(006-visual-identity's T025, the `/login` background wash). `node_modules/expo-linear-gradient`
+confirms a genuine `NativeLinearGradient.web.tsx` variant exists (a real CSS-gradient
+implementation under `react-native-web`, not just an iOS/Android native module) — so this package
+already gets a real gradient on **all three** targets, not just native.
+
+**Chosen approach**: use the already-installed `expo-linear-gradient` via one new shared
+component, `src/features/scanner/CardThumbnail.tsx`. **No new runtime dependency was added** —
+`package.json` is unchanged by this run. This is strictly better than the two alternatives raised
+in the task: a CSS-gradient approach doesn't cover native, and a hand-layered-`View`
+approximation can't produce a true multi-stop blend and would have been extra, unjustified
+complexity when a real, already-present, already-proven-in-this-repo gradient primitive was
+sitting right there.
+
+### Files changed
+
+- `src/theme/colors.ts` — added `colors.gradients` (`cardPurple`, `cardEmber`, `cardTeal`), each a
+  two-stop `[light, dark]` hex tuple of the same hue (a standard Tailwind-shade ramp), documented
+  as decorative-only (not subject to `contrast.test.ts`'s WCAG text-on-background pairing checks,
+  since these never sit under text). No raw hex at any call site outside this one token file.
+- `src/domain/scanResults.ts` — `SampleCard.thumbnailColorToken: string` replaced with
+  `thumbnailGradient: readonly [string, string]`; each of the three `SAMPLE_CARDS` now points at
+  its own `colors.gradients.*` token (Dragón Eterno → `cardPurple`, Fénix de Tormenta →
+  `cardEmber`, Serpiente del Vacío → `cardTeal`) instead of the previous flat
+  `brand.primary`/`accent.priceGreen`/`text.link` swatch. Zero React/React Native import
+  preserved — the field is still plain data (an ordered color-stop tuple), not a component.
+- `src/domain/scanResults.test.ts` — added two tests: each card's `thumbnailGradient` is a real
+  `colors.gradients.*` token (identity-equality check, not a duplicated hex literal) with two
+  valid hex stops, and all three cards' gradients are pairwise distinct.
+- `src/features/scanner/CardThumbnail.tsx` (new) — the one shared decorative-gradient component,
+  consumed by both render sites below instead of two independently-styled `LinearGradient`s (this
+  repo's "extreme consistency" convention). Props: `gradient`, `size`, optional `testID`. Renders
+  square with `radius.row` corners, matching the old flat swatch's exact dimensions/corner radius.
+  Deliberately does **not** set `accessible={false}`/`importantForAccessibility=
+  "no-hide-descendants"` — investigated and confirmed those props also remove the node from this
+  repo's pinned `@testing-library/react-native`'s *default* queries (`getByTestId` etc. skip
+  accessibility-hidden elements unless a caller opts in with `{ includeHiddenElements: true }`),
+  which would have silently broken every existing `getByTestId("found-card-thumbnail")`/
+  `getByTestId("recent-scan-row-...")`-style assertion this component now nests inside. Omitting
+  any `accessibilityRole`/press handler already achieves "not focusable, not announced" — exactly
+  matching the plain `View` it replaces, which never carried an accessibility role either.
+- `src/features/scanner/CardThumbnail.test.tsx` (new) — renders the underlying `LinearGradient`
+  with the given gradient's `colors` prop in order, confirms square sizing from the `size` prop,
+  confirms no `accessibilityRole`/`onPress` (decorative, Constitution VII), and smoke-renders one
+  instance per sample card's own token.
+- `src/features/scanner/RecentScansList.tsx` — each row's flat
+  `<View style={{ backgroundColor: card.thumbnailColorToken }} />` replaced with
+  `<CardThumbnail gradient={card.thumbnailGradient} size={44}
+  testID={\`recent-scan-thumbnail-${card.id}\`} />`; the now-dead `styles.thumbnail` entry removed.
+- `src/features/scanner/RecentScansList.test.tsx` — added a test asserting exactly three
+  `LinearGradient`s render (one per `SAMPLE_CARDS` row), each with that row's own
+  `thumbnailGradient` colors in order, and that all three are pairwise distinct.
+- `src/features/scanner/FoundCardPanel.tsx` — the detail thumbnail's flat
+  `<View style={{ backgroundColor: card.thumbnailColorToken }} testID="found-card-thumbnail" />`
+  replaced with `<CardThumbnail gradient={card.thumbnailGradient} size={64}
+  testID="found-card-thumbnail" />` (same `testID`, so every pre-existing assertion that looked
+  it up still passes unchanged); the now-dead `styles.thumbnail` entry removed.
+- `src/features/scanner/FoundCardPanel.test.tsx` — extended the existing "renders the documented
+  fields for SAMPLE_CARDS[0]" test with an assertion that the underlying `LinearGradient`'s
+  `colors` prop equals `SAMPLE_CARDS[0].thumbnailGradient` (the mockups' "purple gradient" for
+  Dragón Eterno).
+- `src/features/scanner/ScanShellScreen.test.tsx` — added `"CardThumbnail.tsx"` to
+  `SCANNER_SOURCE_FILES`, the camera-import source-inspection guard's file list (FR-016) — a new
+  file under `src/features/scanner/`, so it must be covered by the same guard every other file in
+  that directory already is, per FR-016/T023's own "extend, not narrow" instruction.
+
+**Other thumbnail render sites checked**: grepped the full `src/`/`app/` tree for
+`thumbnailColorToken`/`SAMPLE_CARDS` usage — `RecentScansList.tsx` and `FoundCardPanel.tsx` are
+the only two render sites. No other file renders a card thumbnail.
+
+### Verification
+
+- `npx tsc --noEmit` — clean, no errors.
+- `npx jest src/domain/scanResults.test.ts src/features/scanner/CardThumbnail.test.tsx
+  src/features/scanner/RecentScansList.test.tsx src/features/scanner/FoundCardPanel.test.tsx
+  src/features/scanner/ScanShellScreen.test.tsx src/features/identity/LoginScreenChrome.test.tsx`
+  — 6 suites, 64 tests, all green (the only console noise is the pre-existing, unrelated
+  `@expo/vector-icons` async-`setState`-outside-`act` warning already present before this run).
+- `npm test` (full suite) — **73 suites, 491 tests, all green.**
+- `./init.sh` (no `--skip-*` flags) — `RESULT: SUCCESS (10/10 stages passed)`: type-check clean;
+  tests green; web/iOS/Android bundle exports all clean (confirms
+  `expo-linear-gradient` resolves on all three Metro module graphs, not just web — the exact
+  failure mode the task called out to catch). The two `WARN`s (`expo-doctor` outdated-dependency
+  advisory, native-dependency-version drift for `expo-image-picker`/`react-native`/
+  `react-native-safe-area-context`/`@types/react`/`typescript`) are pre-existing, unrelated to
+  this change (none of the flagged packages were touched), and were already present before this
+  run — non-blocking per `docs/verification.md`.
+- **Level 3 (manual smoke check) — partial, gap disclosed**: started `npx expo start --web` and
+  confirmed the web bundle serves (`HTTP 200`, real hydration HTML, no server-side crash) with no
+  Supabase/backend service running. Per `docs/verification.md`'s own documented trap, this
+  environment has no `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` configured, so
+  `resolveKycRoute()` resolves `"unauthenticated"` and every authenticated route (Escanear,
+  Inicio) redirects to `/login` before rendering — the gradient thumbnails were **not**
+  visually confirmed in a live browser for this run, the same disclosed limitation prior sessions
+  in this file recorded for KYC-gated screens. No screenshot-capable browser tool was available in
+  this session either. The strongest available substitute is what's above: direct
+  `LinearGradient`-prop assertions in `CardThumbnail.test.tsx`/`RecentScansList.test.tsx`/
+  `FoundCardPanel.test.tsx` (real rendered output, not "doesn't crash") plus all three platforms'
+  clean bundle exports.
+
+### Requirement traceability (this run)
+
+This is a presentation-only follow-up to already-`done` FR-008/FR-010 (the found-card panel's
+thumbnail, the sample-card pool) — no FR text changed, so no new FR ID exists to trace to. The
+existing FR-008/FR-010 traceability from the original implementation stands; this run's new
+assertions (gradient-colors-match-token, pairwise-distinct, decorative/non-focusable) are
+additional coverage of the same requirements' "thumbnail" clause, not a new requirement.
+
+### Deviations from the original plan.md/spec.md (disclosed, none require sign-off beyond this note)
+
+- `SampleCard.thumbnailColorToken: string` → `thumbnailGradient: readonly [string, string]` is a
+  breaking rename of a `src/domain` field spec.md's Key Entities section describes as "a
+  thumbnail color token" (singular). This directly implements the human's explicit request in
+  this follow-up prompt, which itself states the original flat-swatch result, though spec-compliant
+  at the time, doesn't match the mockups. No other consumer of `thumbnailColorToken` existed
+  outside the two files updated here (grep-confirmed).
+- Tasks.md itself was not edited — none of its task IDs describe this follow-up, so there was
+  nothing to mark `[X]` or otherwise change there.
