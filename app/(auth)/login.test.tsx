@@ -78,6 +78,28 @@ jest.mock("@supabase/supabase-js", () => {
 
 import LoginRoute from "./login";
 
+import { loginCopy } from "@/domain/i18n/copy/login";
+
+// 006-visual-identity T028 ripple note: SignInForm now renders through
+// useTranslation(loginCopy) (default locale "es", FR-012) instead of hardcoded English —
+// every query below that targets SignInForm's own rendered copy (email/password labels,
+// "Sign in"/"Forgot password?") now reads the literal string from loginCopy.es directly
+// (never a duplicated hardcoded string). RequestPasswordResetForm's/ResetPasswordForm's own
+// copy is untouched by 006 so far (T030/T032, not yet landed) and stays hardcoded English
+// here unchanged — only the SignInForm-mode queries below moved to Spanish.
+//
+// 006-visual-identity T030 ripple note (same shape): RequestPasswordResetForm now also renders
+// through useTranslation(loginCopy) — queries below targeting its own copy WHILE mode ===
+// "request-reset" (email label, "Send reset code") now read requestResetCopy.
+//
+// 006-visual-identity T032 ripple note (same shape): ResetPasswordForm now also renders through
+// useTranslation(loginCopy) — queries below targeting its own copy (reached only after advancing
+// to mode === "reset-with-code": "Email"/"Reset code"/"New password"/"Set new password") now read
+// resetCopy.
+const signInCopy = loginCopy.es;
+const requestResetCopy = loginCopy.es;
+const resetCopy = loginCopy.es;
+
 const { mockSignInWithPassword, mockResetPasswordForEmail, recoveryAuthMocks } = (
   jest.requireMock("@supabase/supabase-js") as {
     __supabaseMockState: {
@@ -89,9 +111,9 @@ const { mockSignInWithPassword, mockResetPasswordForEmail, recoveryAuthMocks } =
 ).__supabaseMockState;
 
 function fillAndSubmitSignIn(getByLabelText: any, getByRole: any, email: string, password: string) {
-  fireEvent.changeText(getByLabelText("Email"), email);
-  fireEvent.changeText(getByLabelText("Password"), password);
-  fireEvent.press(getByRole("button", { name: "Sign in" }));
+  fireEvent.changeText(getByLabelText(signInCopy.emailLabel), email);
+  fireEvent.changeText(getByLabelText(signInCopy.passwordLabel), password);
+  fireEvent.press(getByRole("button", { name: signInCopy.signInButton }));
 }
 
 describe("LoginRoute", () => {
@@ -148,24 +170,25 @@ describe("LoginRoute", () => {
 
     const { getByLabelText, getByRole, getByTestId, getByText, queryByTestId } = render(<LoginRoute />);
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
 
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(mockResetPasswordForEmail).toHaveBeenCalledWith("ana@example.com"));
     await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
-    expect(getByLabelText("Email").props.value).toBe("ana@example.com");
+    // Now on "reset-with-code" — this "Email" belongs to ResetPasswordForm.
+    expect(getByLabelText(resetCopy.emailLabel).props.value).toBe("ana@example.com");
 
     const recoveryAuthMock = recoveryAuthMocks[recoveryAuthMocks.length - 1];
     recoveryAuthMock.verifyOtp.mockResolvedValue({ data: {}, error: null });
     recoveryAuthMock.updateUser.mockResolvedValue({ data: {}, error: null });
     recoveryAuthMock.signOut.mockResolvedValue({ error: null });
 
-    fireEvent.changeText(getByLabelText("Reset code"), "123456");
-    fireEvent.changeText(getByLabelText("New password"), "supersecret2");
-    fireEvent.press(getByRole("button", { name: "Set new password" }));
+    fireEvent.changeText(getByLabelText(resetCopy.resetCodeLabel), "123456");
+    fireEvent.changeText(getByLabelText(resetCopy.newPasswordLabel), "supersecret2");
+    fireEvent.press(getByRole("button", { name: resetCopy.setNewPassword }));
 
     await waitFor(() =>
       expect(recoveryAuthMock.verifyOtp).toHaveBeenCalledWith({
@@ -179,7 +202,7 @@ describe("LoginRoute", () => {
 
     await waitFor(() => expect(getByTestId("sign-in-confirmation-message")).toBeTruthy());
     expect(getByText("Your password has been updated. Sign in with your new password.")).toBeTruthy();
-    expect(getByLabelText("Email").props.value).toBe("ana@example.com");
+    expect(getByLabelText(signInCopy.emailLabel).props.value).toBe("ana@example.com");
     expect(queryByTestId("reset-password-code-field")).toBeNull();
   });
 
@@ -194,10 +217,10 @@ describe("LoginRoute", () => {
 
     const { getByLabelText, getByRole, getByTestId } = render(<LoginRoute />);
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
     const recoveryAuthMock = recoveryAuthMocks[recoveryAuthMocks.length - 1];
@@ -205,9 +228,9 @@ describe("LoginRoute", () => {
     recoveryAuthMock.updateUser.mockResolvedValue({ data: {}, error: null });
     recoveryAuthMock.signOut.mockResolvedValue({ error: null });
 
-    fireEvent.changeText(getByLabelText("Reset code"), "123456");
-    fireEvent.changeText(getByLabelText("New password"), "supersecret2");
-    fireEvent.press(getByRole("button", { name: "Set new password" }));
+    fireEvent.changeText(getByLabelText(resetCopy.resetCodeLabel), "123456");
+    fireEvent.changeText(getByLabelText(resetCopy.newPasswordLabel), "supersecret2");
+    fireEvent.press(getByRole("button", { name: resetCopy.setNewPassword }));
 
     await waitFor(() => expect(recoveryAuthMock.updateUser).toHaveBeenCalledWith({ password: "supersecret2" }));
     expect(mockSignInWithPassword).not.toHaveBeenCalled();

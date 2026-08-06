@@ -1,10 +1,22 @@
-// T011: shared low-level composition primitive for every form field in this feature (and, per
-// this task's brief, the pattern the next screens — ProfileForm (T016/T026), VerifyPhoneScreen
-// (T015) — should copy rather than each re-inventing label/error layout). Pure UI, no
-// react-hook-form/Zod knowledge of its own (Constitution IV) — the caller (RegistrationForm,
-// etc.) owns the field's react-hook-form registration and passes rendered state in as props.
+// T011 (001-registration-kyc): shared low-level composition primitive for every form field in
+// this feature (and, per this task's brief, the pattern the next screens — ProfileForm
+// (T016/T026), VerifyPhoneScreen (T015) — should copy rather than each re-inventing
+// label/error layout). Pure UI, no react-hook-form/Zod knowledge of its own (Constitution IV) —
+// the caller (RegistrationForm, etc.) owns the field's react-hook-form registration and passes
+// rendered state in as props.
+//
+// T023 (006-visual-identity): restyled to the `Field` spec (docs/design-brief-visual-identity.md
+// §3 item 4) — uppercase label.field above a bg.surface, radius.pill, CONTROL_HEIGHT container
+// with 20px (space.xl) horizontal padding, borderless with shadow.surface on mobile/default (no
+// borderWidth — see FormField.web.tsx for the bordered, no-shadow web counterpart, expressed via
+// the .web.tsx convention per Constitution IV, not an inline Platform.OS branch here).
+// FormFieldProps (label/error/children/testID) is unchanged so every existing call site
+// (RegistrationForm, VerifyPhoneScreen, ProfileForm, SignInForm, RequestPasswordResetForm,
+// ResetPasswordForm) keeps compiling with no prop change — this restyle changes appearance only.
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
+
+import { colors, CONTROL_HEIGHT, radius, shadowSurface, space, typography } from "@/theme";
 
 export interface FormFieldProps {
   label: string;
@@ -22,7 +34,12 @@ export function FormField({ label, error, children, testID }: FormFieldProps) {
   return (
     <View style={styles.field} testID={testID}>
       <Text style={styles.label}>{label}</Text>
-      {children}
+      <View
+        style={[styles.inputContainer, shadowSurface]}
+        testID={testID ? `${testID}-input` : undefined}
+      >
+        {children}
+      </View>
       {error ? (
         <Text style={styles.error} accessibilityRole="alert">
           {error}
@@ -34,15 +51,24 @@ export function FormField({ label, error, children, testID }: FormFieldProps) {
 
 const styles = StyleSheet.create({
   field: {
-    gap: 4,
+    gap: space.xs,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
+    ...typography.label.field,
   },
+  inputContainer: {
+    height: CONTROL_HEIGHT,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg.surface,
+    paddingHorizontal: space.xl,
+    justifyContent: "center",
+  },
+  // T050 follow-up (T023-T024a review nit): now sources colors.text.danger (src/theme/colors.ts)
+  // instead of the raw "#dc2626" literal this restyle originally left in place — see colors.ts's
+  // own comment for the computed 4.5:1-clearing rationale (contrast.test.ts regression-guards
+  // it).
   error: {
     fontSize: 13,
-    color: "#dc2626",
+    color: colors.text.danger,
   },
 });

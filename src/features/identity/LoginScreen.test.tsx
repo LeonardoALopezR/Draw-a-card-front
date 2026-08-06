@@ -9,8 +9,52 @@
 // Story 1's Acceptance Scenario 5") via the T013/T014 review follow-up fix
 // (progress/review_005-login.md, Finding 1): handleRequestReset must not advance to
 // "reset-with-code" on a network-level failure.
+//
+// 006-visual-identity T028 ripple note: SignInForm now renders through useTranslation(loginCopy)
+// (default locale "es", FR-012) instead of hardcoded English — every query below that targets
+// SignInForm's own rendered copy (email/password labels, "Sign in"/"Forgot password?") now reads
+// the literal string from loginCopy.es directly (never a duplicated hardcoded string), so this
+// file can't silently drift from the real dictionary. RequestPasswordResetForm's and
+// ResetPasswordForm's own copy is untouched by 006 so far (T030/T032, not yet landed) and stays
+// hardcoded English here unchanged — only the SignInForm-mode queries below moved to Spanish.
+//
+// 006-visual-identity T030 ripple note (same shape as the T028 note above):
+// RequestPasswordResetForm now also renders through useTranslation(loginCopy) — every query below
+// that targets its own rendered copy (the "Correo"/emailLabel field WHILE mode === "request-reset",
+// "Send reset code" -> "Enviar código", and "Back to sign in" pressed WHILE still on
+// "request-reset") now reads the real loginCopy.es strings via requestResetCopy below.
+//
+// 006-visual-identity T032 ripple note (same shape as the T028/T030 notes above):
+// ResetPasswordForm now also renders through useTranslation(loginCopy) — every query below that
+// targets its own rendered copy ("Email"/"Reset code"/"New password"/"Set new password"/
+// "Back to sign in", reached only AFTER the screen has already advanced to mode ===
+// "reset-with-code") now reads the real loginCopy.es strings via resetCopy below. "Back to sign
+// in" is a shared, literal string between RequestPasswordResetForm's (requestResetCopy) and
+// ResetPasswordForm's (resetCopy) dictionaries — both now resolve to the same Spanish string
+// (es.backToSignIn), so this distinction is purely about which mode/form each occurrence's query
+// actually runs against, traced line-by-line before changing anything.
+//
+// 006-visual-identity T034/T035 ripple note: LoginScreen.tsx itself now wraps every per-mode
+// branch in LoginScreenChrome (a passthrough per its own LoginScreenChrome.test.tsx regression
+// guard — asserted there, not re-asserted here) and renders the brand block (BrandMark +
+// "brandTitle"/"tagline") directly above <SignInForm> in the "sign-in" branch only. The
+// full-screen "Signing you in…" view's text is now also resolved through
+// useTranslation(loginCopy) (its "signingIn" key — the same one SignInForm's busy-button label
+// already used before this task) instead of the prior hardcoded English literal "Signing you
+// in…" — the ONE existing assertion below that queried that literal text was updated to query
+// signInCopy.signingIn instead (still asserting the exact same accessibilityRole="alert"/testID
+// regression guard; only the literal string changed, the same kind of ripple T028/T030/T032
+// already applied throughout this file). Every other existing assertion — the FR-006
+// no-navigation guard, the "reset-with-code" step never touching the shared `signIn` prop, the
+// full mode-sequence walk — was run first and confirmed passing unmodified before this edit.
 import React from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+
+import { loginCopy } from "@/domain/i18n/copy/login";
+
+const signInCopy = loginCopy.es;
+const requestResetCopy = loginCopy.es;
+const resetCopy = loginCopy.es;
 
 // LoginScreen renders the real SignInForm (T003), which renders expo-router's <Link> — mocked
 // the same way SignInForm.test.tsx mocks it (no router context available in a bare RNTL render).
@@ -45,9 +89,9 @@ import { LoginScreen, type RecoverySession } from "./LoginScreen";
 import { NETWORK_SIGN_IN_ERROR_MESSAGE } from "@/lib/supabase-client";
 
 function fillAndSubmitSignIn(getByLabelText: any, getByRole: any, email: string, password: string) {
-  fireEvent.changeText(getByLabelText("Email"), email);
-  fireEvent.changeText(getByLabelText("Password"), password);
-  fireEvent.press(getByRole("button", { name: "Sign in" }));
+  fireEvent.changeText(getByLabelText(signInCopy.emailLabel), email);
+  fireEvent.changeText(getByLabelText(signInCopy.passwordLabel), password);
+  fireEvent.press(getByRole("button", { name: signInCopy.signInButton }));
 }
 
 // A controllable stand-in for src/lib/supabase-client.ts's createPasswordRecoverySession()
@@ -99,7 +143,7 @@ describe("LoginScreen", () => {
 
     await waitFor(() => expect(getByTestId("login-signing-in")).toBeTruthy());
     expect(signIn).toHaveBeenCalledWith("ana@example.com", "supersecret1");
-    expect(queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(queryByRole("button", { name: signInCopy.signInButton })).toBeNull();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
   });
@@ -108,12 +152,18 @@ describe("LoginScreen", () => {
   // tech on its own — it replaces SignInForm's whole view tree with no user-initiated focus
   // change, so it needs accessibilityRole="alert" (a live-region announcement), not a plain,
   // silent "text" role.
+  //
+  // 006-visual-identity T034/T035 ripple note: this view's text now resolves through
+  // useTranslation(loginCopy) (its "signingIn" key) instead of the prior hardcoded English
+  // literal "Signing you in…" — asserting signInCopy.signingIn here instead of that literal is
+  // the only change to this test; the underlying regression guard (an alert-role announcement on
+  // this exact transition) is unchanged.
   it("exposes the 'Signing you in…' view as an alert so assistive tech announces it", async () => {
     const { getByLabelText, getByRole } = renderLoginScreen();
 
     fillAndSubmitSignIn(getByLabelText, getByRole, "ana@example.com", "supersecret1");
 
-    await waitFor(() => expect(getByRole("alert", { name: "Signing you in…" })).toBeTruthy());
+    await waitFor(() => expect(getByRole("alert", { name: signInCopy.signingIn })).toBeTruthy());
   });
 
   // FR-001, FR-004: a credentials rejection (Supabase resolves with a generic error) keeps
@@ -129,7 +179,7 @@ describe("LoginScreen", () => {
       expect(getByTestId("sign-in-form-error")).toBeTruthy();
       expect(getByText("Invalid login credentials")).toBeTruthy();
     });
-    expect(getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(getByRole("button", { name: signInCopy.signInButton })).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
@@ -159,17 +209,18 @@ describe("LoginScreen", () => {
 
     expect(createPasswordRecoverySession).not.toHaveBeenCalled();
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByRole("button", { name: "Send reset code" })).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByRole("button", { name: requestResetCopy.sendResetCode })).toBeTruthy());
     expect(createPasswordRecoverySession).toHaveBeenCalledTimes(1);
 
     // Backing out and pressing "Forgot password?" again from a fresh sign-in view creates a
     // second, independent recovery session — see the "Back to sign in" test below for the
-    // corresponding cleanup assertion this depends on.
-    fireEvent.press(getByRole("button", { name: "Back to sign in" }));
-    await waitFor(() => expect(getByRole("button", { name: "Forgot password?" })).toBeTruthy());
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByRole("button", { name: "Send reset code" })).toBeTruthy());
+    // corresponding cleanup assertion this depends on. Still on "request-reset" here (never
+    // advanced to "reset-with-code"), so this is RequestPasswordResetForm's own back button.
+    fireEvent.press(getByRole("button", { name: requestResetCopy.backToSignIn }));
+    await waitFor(() => expect(getByRole("button", { name: signInCopy.forgotPassword })).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByRole("button", { name: requestResetCopy.sendResetCode })).toBeTruthy());
     expect(createPasswordRecoverySession).toHaveBeenCalledTimes(2);
   });
 
@@ -186,22 +237,22 @@ describe("LoginScreen", () => {
     });
 
     // "sign-in" -> "request-reset"
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
 
     // "request-reset" -> "reset-with-code"
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(requestPasswordReset).toHaveBeenCalledWith("ana@example.com"));
     await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
     // The submitted email carried forward as ResetPasswordForm's initialEmail.
-    expect(getByLabelText("Email").props.value).toBe("ana@example.com");
+    expect(getByLabelText(resetCopy.emailLabel).props.value).toBe("ana@example.com");
 
     // "reset-with-code" -> "sign-in"
-    fireEvent.changeText(getByLabelText("Reset code"), "123456");
-    fireEvent.changeText(getByLabelText("New password"), "supersecret2");
-    fireEvent.press(getByRole("button", { name: "Set new password" }));
+    fireEvent.changeText(getByLabelText(resetCopy.resetCodeLabel), "123456");
+    fireEvent.changeText(getByLabelText(resetCopy.newPasswordLabel), "supersecret2");
+    fireEvent.press(getByRole("button", { name: resetCopy.setNewPassword }));
 
     await waitFor(() => expect(recoverySession.verifyCode).toHaveBeenCalledWith("ana@example.com", "123456"));
     expect(recoverySession.updatePassword).toHaveBeenCalledWith("supersecret2");
@@ -210,7 +261,7 @@ describe("LoginScreen", () => {
     // Back on plain "sign-in", with the confirmation banner and the email pre-filled.
     await waitFor(() => expect(getByTestId("sign-in-confirmation-message")).toBeTruthy());
     expect(getByText("Your password has been updated. Sign in with your new password.")).toBeTruthy();
-    expect(getByLabelText("Email").props.value).toBe("ana@example.com");
+    expect(getByLabelText(signInCopy.emailLabel).props.value).toBe("ana@example.com");
     expect(queryByTestId("reset-password-code-field")).toBeNull();
   });
 
@@ -229,15 +280,15 @@ describe("LoginScreen", () => {
       createPasswordRecoverySession: jest.fn(() => recoverySession),
     });
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
-    fireEvent.changeText(getByLabelText("Reset code"), "123456");
-    fireEvent.changeText(getByLabelText("New password"), "supersecret2");
-    fireEvent.press(getByRole("button", { name: "Set new password" }));
+    fireEvent.changeText(getByLabelText(resetCopy.resetCodeLabel), "123456");
+    fireEvent.changeText(getByLabelText(resetCopy.newPasswordLabel), "supersecret2");
+    fireEvent.press(getByRole("button", { name: resetCopy.setNewPassword }));
 
     await waitFor(() => expect(recoverySession.updatePassword).toHaveBeenCalledWith("supersecret2"));
     expect(signIn).not.toHaveBeenCalled();
@@ -256,10 +307,10 @@ describe("LoginScreen", () => {
       requestPasswordReset,
     });
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(requestPasswordReset).toHaveBeenCalledWith("ana@example.com"));
     await waitFor(() => {
@@ -267,7 +318,7 @@ describe("LoginScreen", () => {
       expect(getByText(NETWORK_SIGN_IN_ERROR_MESSAGE)).toBeTruthy();
     });
     // Still on "request-reset" — never advanced to "reset-with-code".
-    expect(getByRole("button", { name: "Send reset code" })).toBeTruthy();
+    expect(getByRole("button", { name: requestResetCopy.sendResetCode })).toBeTruthy();
     expect(queryByTestId("reset-password-code-field")).toBeNull();
     expect(queryByTestId("request-reset-confirmation")).toBeNull();
   });
@@ -282,17 +333,61 @@ describe("LoginScreen", () => {
       createPasswordRecoverySession: jest.fn(() => recoverySession),
     });
 
-    fireEvent.press(getByRole("button", { name: "Forgot password?" }));
-    await waitFor(() => expect(getByLabelText("Email")).toBeTruthy());
-    fireEvent.changeText(getByLabelText("Email"), "ana@example.com");
-    fireEvent.press(getByRole("button", { name: "Send reset code" }));
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
 
     await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
-    fireEvent.press(getByRole("button", { name: "Back to sign in" }));
+    // Now on "reset-with-code" — this "Back to sign in" belongs to ResetPasswordForm.
+    fireEvent.press(getByRole("button", { name: resetCopy.backToSignIn }));
 
-    await waitFor(() => expect(getByRole("button", { name: "Sign in" })).toBeTruthy());
+    await waitFor(() => expect(getByRole("button", { name: signInCopy.signInButton })).toBeTruthy());
     expect(queryByTestId("sign-in-confirmation-message")).toBeNull();
-    expect(getByLabelText("Email").props.value).toBe("");
+    expect(getByLabelText(signInCopy.emailLabel).props.value).toBe("");
     expect(recoverySession.discard).toHaveBeenCalledTimes(1);
+  });
+
+  // 006-visual-identity T035 (spec.md US2 AS1/AS2): the brand block (BrandMark, brief §4 item 1;
+  // "Draw a Card", item 2; the tagline, item 3) renders directly above <SignInForm> ONLY on the
+  // plain "sign-in" view — never on "request-reset" or "reset-with-code", since the brief's
+  // mockups have no equivalent for either forgot-password sub-view.
+  it("renders the brand block (BrandMark, title, tagline) on the sign-in view, and nowhere in the forgot-password sub-flow", async () => {
+    const recoverySession = makeRecoverySession();
+    const { getByLabelText, getByRole, getByTestId, getByText, queryByText, queryByRole } = renderLoginScreen({
+      createPasswordRecoverySession: jest.fn(() => recoverySession),
+    });
+
+    // "sign-in": the brand block is present.
+    expect(getByRole("image", { name: "Draw a Card" })).toBeTruthy();
+    expect(getByText(signInCopy.brandTitle)).toBeTruthy();
+    expect(getByText(signInCopy.tagline)).toBeTruthy();
+
+    // "sign-in" -> "request-reset": the brand block is gone.
+    fireEvent.press(getByRole("button", { name: signInCopy.forgotPassword }));
+    await waitFor(() => expect(getByLabelText(requestResetCopy.emailLabel)).toBeTruthy());
+    expect(queryByRole("image", { name: "Draw a Card" })).toBeNull();
+    expect(queryByText(signInCopy.tagline)).toBeNull();
+
+    // "request-reset" -> "reset-with-code": still gone.
+    fireEvent.changeText(getByLabelText(requestResetCopy.emailLabel), "ana@example.com");
+    fireEvent.press(getByRole("button", { name: requestResetCopy.sendResetCode }));
+    await waitFor(() => expect(getByTestId("reset-password-code-field")).toBeTruthy());
+    expect(queryByRole("image", { name: "Draw a Card" })).toBeNull();
+    expect(queryByText(signInCopy.tagline)).toBeNull();
+  });
+
+  // 006-visual-identity T035 (spec.md US2 AS4, FR-006): the brand block also does not render on
+  // the post-submit "Signing you in…" transition — that view replaces SignInForm (and everything
+  // above it) with only the neutral alert text (see the "exposes the 'Signing you in…' view..."
+  // test above for the alert-role regression guard itself).
+  it("does not render the brand block on the 'Signing you in…' transition", async () => {
+    const { getByLabelText, getByRole, getByTestId, queryByRole, queryByText } = renderLoginScreen();
+
+    fillAndSubmitSignIn(getByLabelText, getByRole, "ana@example.com", "supersecret1");
+
+    await waitFor(() => expect(getByTestId("login-signing-in")).toBeTruthy());
+    expect(queryByRole("image", { name: "Draw a Card" })).toBeNull();
+    expect(queryByText(signInCopy.tagline)).toBeNull();
   });
 });

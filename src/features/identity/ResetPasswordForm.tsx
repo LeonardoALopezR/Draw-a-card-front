@@ -33,6 +33,23 @@
 // actually registered. RequestPasswordResetForm's own "submitted" state is left intact as
 // defense-in-depth for the (currently unreachable) case where the transition doesn't fire, but is
 // no longer the primary mechanism a real user relies on to see this confirmation.
+//
+// T032 (006-visual-identity, spec.md Assumptions — "forgot-password sub-views inherit the
+// vocabulary, not a new mockup layout"): restyled to the same Field/PrimaryButton vocabulary
+// SignInForm (T028)/RequestPasswordResetForm (T030) already established — no mockup exists for
+// this view, so content order/field set is unchanged, only markup/styling and copy-routing. Every
+// rendered string now resolves through useTranslation(loginCopy) — the previously-exported
+// RESET_CODE_SENT_MESSAGE string constant is retired in favor of loginCopy.{es,en}.resetCodeSentMessage
+// (confirmed via repo-wide grep before removing it — nothing outside this file's own, now-rewritten
+// test imported it). "Set new password" is now a PrimaryButton. "Resend code" becomes a
+// SecondaryButton (T013) — unlike "Back to sign in" (kept a plain restyled Pressable, matching
+// RequestPasswordResetForm's judgment call that a full-width pill would compete with the primary
+// action), the resend control was ALREADY a bordered, button-shaped secondary action before this
+// restyle (not a plain link), so SecondaryButton's exact geometry/border vocabulary is a direct,
+// non-inventive fit — its countdown-driven `disabled` state (`!canResend`, unchanged logic) is
+// passed straight through. `CodeInput` itself is untouched — only wrapped in the restyled `Field`
+// label treatment, exactly as it already was. `RESEND_COOLDOWN_SECONDS`'s value/timer `useEffect`
+// and the `serverError.field === "code"` inline-error `useEffect` are byte-for-byte unchanged.
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -43,6 +60,11 @@ import {
   resetPasswordWithCodeSchema,
   type ResetWithCodeInput,
 } from "@/domain/schemas";
+import { loginCopy } from "@/domain/i18n/copy/login";
+import { useTranslation } from "@/features/i18n/LocaleContext";
+import { colors, space, typography } from "@/theme";
+import { PrimaryButton } from "@/features/ui/PrimaryButton";
+import { SecondaryButton } from "@/features/ui/SecondaryButton";
 
 import { CodeInput } from "./CodeInput";
 import { FormField } from "./FormField";
@@ -71,12 +93,6 @@ export interface ResetPasswordFormProps {
   serverError?: ResetPasswordFieldError;
 }
 
-// See this file's top comment (Finding 2 / option (b)) — deliberately identical wording to
-// RequestPasswordResetForm's REQUEST_PASSWORD_RESET_CONFIRMATION_MESSAGE (not imported from there,
-// each screen owns its own copy, exactly as RESEND_COOLDOWN_SECONDS below does) so the two views
-// read as one consistent flow rather than two differently-worded confirmations.
-export const RESET_CODE_SENT_MESSAGE = "If that email is registered, we've sent a code.";
-
 // Client-side-only UX cooldown after pressing "Resend code" — identical value and rationale to
 // VerifyPhoneScreen.tsx's RESEND_COOLDOWN_SECONDS (see that file's top comment for the full
 // reasoning: long enough to cover typical email delivery latency, shorter than any backend rate
@@ -94,6 +110,8 @@ export function ResetPasswordForm({
   isResending = false,
   serverError,
 }: ResetPasswordFormProps) {
+  const t = useTranslation(loginCopy);
+
   const {
     control,
     handleSubmit,
@@ -137,15 +155,20 @@ export function ResetPasswordForm({
     onResend();
   }
 
+  const resendLabel =
+    secondsRemaining > 0
+      ? t("resendCodeWithSeconds").replace("{{seconds}}", String(secondsRemaining))
+      : t("resendCode");
+
   return (
     <View style={styles.container}>
       <Text style={styles.title} accessibilityRole="header">
-        Enter your reset code
+        {t("resetCodeTitle")}
       </Text>
       <Text style={styles.confirmation} accessibilityRole="text" testID="reset-password-code-sent-message">
-        {RESET_CODE_SENT_MESSAGE}
+        {t("resetCodeSentMessage")}
       </Text>
-      <Text style={styles.subtitle}>Enter the code we emailed you, along with a new password.</Text>
+      <Text style={styles.subtitle}>{t("resetCodeSubtitle")}</Text>
 
       {generalError ? (
         <Text style={styles.generalError} accessibilityRole="alert" testID="reset-password-form-error">
@@ -153,7 +176,7 @@ export function ResetPasswordForm({
         </Text>
       ) : null}
 
-      <FormField label="Email" error={errors.email?.message} testID="reset-password-email-field">
+      <FormField label={t("emailLabel")} error={errors.email?.message} testID="reset-password-email-field">
         <Controller
           control={control}
           name="email"
@@ -164,7 +187,9 @@ export function ResetPasswordForm({
               onChangeText={field.onChange}
               onBlur={field.onBlur}
               editable={!isSubmitting}
-              accessibilityLabel="Email"
+              accessibilityLabel={t("emailLabel")}
+              placeholder={t("emailPlaceholder")}
+              placeholderTextColor={colors.text.placeholder}
               autoCapitalize="none"
               autoComplete="email"
               keyboardType="email-address"
@@ -174,7 +199,7 @@ export function ResetPasswordForm({
         />
       </FormField>
 
-      <FormField label="Reset code" error={errors.code?.message} testID="reset-password-code-field">
+      <FormField label={t("resetCodeLabel")} error={errors.code?.message} testID="reset-password-code-field">
         <Controller
           control={control}
           name="code"
@@ -185,14 +210,14 @@ export function ResetPasswordForm({
               onBlur={field.onBlur}
               length={PASSWORD_RESET_CODE_LENGTH}
               editable={!isSubmitting}
-              accessibilityLabel="Reset code"
+              accessibilityLabel={t("resetCodeLabel")}
               testID="reset-password-code-input"
             />
           )}
         />
       </FormField>
 
-      <FormField label="New password" error={errors.password?.message} testID="reset-password-password-field">
+      <FormField label={t("newPasswordLabel")} error={errors.password?.message} testID="reset-password-password-field">
         <Controller
           control={control}
           name="password"
@@ -203,7 +228,7 @@ export function ResetPasswordForm({
               onChangeText={field.onChange}
               onBlur={field.onBlur}
               editable={!isSubmitting}
-              accessibilityLabel="New password"
+              accessibilityLabel={t("newPasswordLabel")}
               autoComplete="password-new"
               secureTextEntry
               testID="reset-password-password-input"
@@ -212,40 +237,28 @@ export function ResetPasswordForm({
         />
       </FormField>
 
-      <Pressable
-        style={[styles.button, isSubmitting ? styles.buttonDisabled : null]}
+      <PrimaryButton
+        label={isSubmitting ? t("settingPassword") : t("setNewPassword")}
         onPress={submit}
-        disabled={isSubmitting}
-        accessibilityRole="button"
-        accessibilityLabel="Set new password"
-        accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+        busy={isSubmitting}
         testID="reset-password-submit-button"
-      >
-        <Text style={styles.buttonText}>{isSubmitting ? "Setting password…" : "Set new password"}</Text>
-      </Pressable>
+      />
 
-      <Pressable
-        style={[styles.resendButton, !canResend ? styles.buttonDisabled : null]}
+      <SecondaryButton
+        label={resendLabel}
         onPress={handleResendPress}
         disabled={!canResend}
-        accessibilityRole="button"
-        accessibilityLabel="Resend code"
-        accessibilityState={{ disabled: !canResend, busy: isResending }}
         testID="reset-password-resend-button"
-      >
-        <Text style={styles.resendButtonText}>
-          {secondsRemaining > 0 ? `Resend code (${secondsRemaining}s)` : "Resend code"}
-        </Text>
-      </Pressable>
+      />
 
       <Pressable
         style={styles.backButton}
         onPress={onBack}
         accessibilityRole="button"
-        accessibilityLabel="Back to sign in"
+        accessibilityLabel={t("backToSignIn")}
         testID="reset-password-back-button"
       >
-        <Text style={styles.backButtonText}>Back to sign in</Text>
+        <Text style={styles.backButtonText}>{t("backToSignIn")}</Text>
       </Pressable>
     </View>
   );
@@ -254,69 +267,40 @@ export function ResetPasswordForm({
 // Minimum 44x44 tap targets (Constitution VII, SC-003/FR-010) on every interactive element;
 // single narrow column, unmodified at a 375px-wide web viewport through tablet/desktop widths —
 // mirrors VerifyPhoneScreen's/SignInForm's layout exactly (docs/conventions.md: no new visual
-// language).
+// language). Every color/size value traces to src/theme's semantic tokens (FR-001) except the
+// title's heading size, which is kept as a pre-existing documented literal (no heading-size
+// token exists in this feature's token module, and docs/design-brief-visual-identity.md has no
+// mockup for this view to specify one from). The general-error banner now sources
+// colors.text.danger (T050 follow-up — see FormField.tsx's and src/theme/colors.ts's comments)
+// rather than a raw literal.
 const styles = StyleSheet.create({
   container: {
     width: "100%",
     maxWidth: 420,
-    gap: 16,
+    gap: space.lg,
   },
   title: {
     fontSize: 22,
     fontWeight: "600",
+    color: colors.text.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: "#4b5563",
+    color: colors.text.secondary,
   },
   confirmation: {
     fontSize: 14,
-    color: "#374151",
+    color: colors.text.secondary,
   },
   generalError: {
     fontSize: 14,
-    color: "#dc2626",
+    color: colors.text.danger,
   },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  button: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 8,
-    backgroundColor: "#111827",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  resendButton: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  resendButtonText: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: typography.body.input.fontSize,
+    fontWeight: typography.body.input.fontWeight,
+    color: colors.text.primary,
+    padding: 0,
   },
   backButton: {
     minHeight: 44,
@@ -325,8 +309,8 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   backButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: typography.body.link.fontSize,
+    fontWeight: typography.body.link.fontWeight,
+    color: typography.body.link.color,
   },
 });

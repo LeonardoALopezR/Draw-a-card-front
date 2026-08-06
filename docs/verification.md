@@ -40,6 +40,40 @@ Exercise the actual flow you changed. For platform-specific behavior (camera cap
 autofill, secure storage), also check the relevant simulator/device — don't assume web
 parity covers native-only code paths (`.ios.tsx`/`.android.tsx` files, permission flows).
 
+#### Which live services to run — Supabase, the local backend, or both
+
+This app has **two independent live dependencies** (Constitution Principles II/III/VIII): the
+Supabase Auth SDK, and the `Draw-a-card` backend API. A Level 3 check may run against either
+one alone or both together — **all three configurations are legitimate**, and none of them is
+"the" correct setup. What is *not* legitimate is being vague about which one you used.
+
+**State the configuration in your task report, and state what it therefore could not cover.**
+"Smoke-checked on web" is not a verification claim; "smoke-checked on web against a real
+Supabase project with no backend running, so nothing behind the KYC gate was reachable" is.
+
+| Configuration | Set | Covers | Cannot cover |
+|---|---|---|---|
+| **Supabase only** | `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Sign-in, registration's auth step, session persistence, password reset — everything Principle III routes through the SDK | Any `/identity/me/*` or other API call. The KYC gate's status fetch fails, so you land on the retryable status screen rather than the app |
+| **Local backend only** | `EXPO_PUBLIC_API_URL` → `http://localhost:<port>`; in the backend repo, `docker compose up` (Postgres/Redis/MinIO) then `npm run dev` | API request/response shaping, endpoint contracts, backend error handling | **Anything behind the KYC gate.** With no session, `resolveKycRoute` returns `unauthenticated` and redirects every authenticated route to `/login` |
+| **Both** | All three env vars, both services up | Genuine end-to-end flows — sign in, then the authenticated screens that follow | Native-module behavior (still needs a simulator/device, see Level 3 above) |
+
+Two traps, both hit for real in this repo rather than hypothetical:
+
+- **An unreachable screen is not a verified screen.** The gate redirects on *session*, not on
+  data. A screen whose content is entirely local and static is still unreachable without
+  Supabase credentials — this is exactly how `006-visual-identity`'s `/scan` shell shipped
+  with component tests only. If you couldn't reach a screen, say so; don't let "the tests
+  pass" stand in for having seen it.
+- **Running both is not enough if they disagree about the user.** The backend's
+  `AUTH_PROVIDER_MODE` must point at the *same* Supabase project the app uses. Left at
+  `"mock"` (its `.env.example` default) the backend mints its own fake `authProviderId` that
+  the app can never sign in against, so the two halves silently describe different users and
+  every authenticated call fails in a way that looks like an app bug.
+
+Mock a service only when its real counterpart **doesn't exist yet** (Principle VIII), not to
+dodge setup. If credentials or the backend genuinely aren't available in your environment,
+that's a disclosed gap in the task report — never an implied live check.
+
 ### Level 4 — Build check (automated)
 
 `init.sh` runs `npx expo export` **once per target — web, iOS, and Android** — confirming the
@@ -82,6 +116,11 @@ requirement has zero covering tests, once test tooling exists for that feature a
   possible).
 - ❌ Assuming web behavior covers iOS/Android without checking the platform-specific file or
   simulator when platform notes exist in the spec.
+- ❌ Reporting a Level 3 check without naming which live services were running — or writing
+  "smoke-checked on web" when the screen in question was never actually reachable (see
+  "Which live services to run" above).
+- ❌ Pointing the backend at `AUTH_PROVIDER_MODE="mock"` while the app uses a real Supabase
+  project, then reporting the result as an end-to-end check.
 - ❌ Marking a task or feature `done` without a green `./init.sh`.
 
 ## Final check before `done`

@@ -16,12 +16,32 @@
 // to show its own local confirmation or leave the error-surfacing to the `serverError` prop below
 // — this still can never leak an email-exists/doesn't-exist distinction, only a reachability one
 // (spec.md Edge Cases: "the reset-code request itself fails at the network level").
+//
+// T030 (006-visual-identity, spec.md Assumptions — "forgot-password sub-views inherit the
+// vocabulary, not a new mockup layout"): restyled to the same Field/PrimaryButton vocabulary
+// SignInForm (T028) already established — no mockup exists for this view, so content order/field
+// set is unchanged, only markup/styling and copy-routing. "Send reset code" is now a
+// PrimaryButton; "Back to sign in" stays a plain, restyled Pressable (typography.body.link
+// styling) rather than a SecondaryButton, since a full-width pill reads as a second competing
+// call-to-action on a screen with exactly one real action — the same judgment SignInForm already
+// applied to its own right-aligned "Olvidé mi contraseña" link. Every string now resolves through
+// useTranslation(loginCopy) — zero hardcoded copy remains. `onSubmit`'s boolean-resolving
+// contract, `onBack`, `isSubmitting`, and `serverError` are byte-for-byte unchanged; the
+// anti-enumeration confirmation copy's LOGIC (always the same message regardless of whether the
+// email is registered) is untouched — only its rendered text now comes from
+// loginCopy.{es,en}.requestResetConfirmation instead of the retired
+// REQUEST_PASSWORD_RESET_CONFIRMATION_MESSAGE constant (nothing outside this file's own,
+// now-rewritten test imported that constant — confirmed via repo-wide grep before removing it).
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { requestPasswordResetSchema, type RequestResetInput } from "@/domain/schemas";
+import { loginCopy } from "@/domain/i18n/copy/login";
+import { useTranslation } from "@/features/i18n/LocaleContext";
+import { colors, space, typography } from "@/theme";
+import { PrimaryButton } from "@/features/ui/PrimaryButton";
 
 import { FormField } from "./FormField";
 
@@ -42,10 +62,6 @@ export interface RequestPasswordResetFormProps {
   serverError?: string;
 }
 
-// FR-007: deliberately identical wording regardless of whether the submitted email is actually
-// registered — see this file's top comment.
-export const REQUEST_PASSWORD_RESET_CONFIRMATION_MESSAGE = "If that email is registered, we've sent a code";
-
 const DEFAULT_VALUES: RequestResetInput = { email: "" };
 
 export function RequestPasswordResetForm({
@@ -54,6 +70,7 @@ export function RequestPasswordResetForm({
   isSubmitting = false,
   serverError,
 }: RequestPasswordResetFormProps) {
+  const t = useTranslation(loginCopy);
   const [submitted, setSubmitted] = useState(false);
 
   const {
@@ -75,16 +92,16 @@ export function RequestPasswordResetForm({
   return (
     <View style={styles.container}>
       <Text style={styles.title} accessibilityRole="header">
-        Reset your password
+        {t("requestResetTitle")}
       </Text>
 
       {submitted ? (
         <Text style={styles.confirmation} accessibilityRole="alert" testID="request-reset-confirmation">
-          {REQUEST_PASSWORD_RESET_CONFIRMATION_MESSAGE}
+          {t("requestResetConfirmation")}
         </Text>
       ) : (
         <>
-          <Text style={styles.subtitle}>Enter your email and we'll send you a code to reset your password.</Text>
+          <Text style={styles.subtitle}>{t("requestResetSubtitle")}</Text>
 
           {serverError ? (
             <Text style={styles.generalError} accessibilityRole="alert" testID="request-reset-form-error">
@@ -92,7 +109,7 @@ export function RequestPasswordResetForm({
             </Text>
           ) : null}
 
-          <FormField label="Email" error={errors.email?.message} testID="request-reset-email-field">
+          <FormField label={t("emailLabel")} error={errors.email?.message} testID="request-reset-email-field">
             <Controller
               control={control}
               name="email"
@@ -103,7 +120,9 @@ export function RequestPasswordResetForm({
                   onChangeText={field.onChange}
                   onBlur={field.onBlur}
                   editable={!isSubmitting}
-                  accessibilityLabel="Email"
+                  accessibilityLabel={t("emailLabel")}
+                  placeholder={t("emailPlaceholder")}
+                  placeholderTextColor={colors.text.placeholder}
                   autoCapitalize="none"
                   autoComplete="email"
                   keyboardType="email-address"
@@ -113,17 +132,12 @@ export function RequestPasswordResetForm({
             />
           </FormField>
 
-          <Pressable
-            style={[styles.button, isSubmitting ? styles.buttonDisabled : null]}
+          <PrimaryButton
+            label={isSubmitting ? t("sendingResetCode") : t("sendResetCode")}
             onPress={submit}
-            disabled={isSubmitting}
-            accessibilityRole="button"
-            accessibilityLabel="Send reset code"
-            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+            busy={isSubmitting}
             testID="request-reset-submit-button"
-          >
-            <Text style={styles.buttonText}>{isSubmitting ? "Sending…" : "Send reset code"}</Text>
-          </Pressable>
+          />
         </>
       )}
 
@@ -131,10 +145,10 @@ export function RequestPasswordResetForm({
         style={styles.backButton}
         onPress={onBack}
         accessibilityRole="button"
-        accessibilityLabel="Back to sign in"
+        accessibilityLabel={t("backToSignIn")}
         testID="request-reset-back-button"
       >
-        <Text style={styles.backButtonText}>Back to sign in</Text>
+        <Text style={styles.backButtonText}>{t("backToSignIn")}</Text>
       </Pressable>
     </View>
   );
@@ -142,54 +156,40 @@ export function RequestPasswordResetForm({
 
 // Minimum 44x44 tap targets (Constitution VII, SC-003/FR-010) on every interactive element;
 // single narrow column, unmodified at a 375px-wide web viewport through tablet/desktop widths —
-// mirrors SignInForm's layout exactly (docs/conventions.md: no new visual language).
+// mirrors SignInForm's layout exactly (docs/conventions.md: no new visual language). Every color/
+// size value traces to src/theme's semantic tokens (FR-001) except the title's heading size,
+// which is kept as a pre-existing documented literal (no heading-size token exists in this
+// feature's token module, and docs/design-brief-visual-identity.md has no mockup for this view
+// to specify one from). The general-error banner now sources colors.text.danger (T050 follow-up
+// — see FormField.tsx's and src/theme/colors.ts's comments) rather than a raw literal.
 const styles = StyleSheet.create({
   container: {
     width: "100%",
     maxWidth: 420,
-    gap: 16,
+    gap: space.lg,
   },
   title: {
     fontSize: 22,
     fontWeight: "600",
+    color: colors.text.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: "#4b5563",
+    color: colors.text.secondary,
   },
   generalError: {
     fontSize: 14,
-    color: "#dc2626",
+    color: colors.text.danger,
   },
   confirmation: {
     fontSize: 14,
-    color: "#374151",
+    color: colors.text.secondary,
   },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  button: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 8,
-    backgroundColor: "#111827",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: typography.body.input.fontSize,
+    fontWeight: typography.body.input.fontWeight,
+    color: colors.text.primary,
+    padding: 0,
   },
   backButton: {
     minHeight: 44,
@@ -198,8 +198,8 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   backButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: typography.body.link.fontSize,
+    fontWeight: typography.body.link.fontWeight,
+    color: typography.body.link.color,
   },
 });

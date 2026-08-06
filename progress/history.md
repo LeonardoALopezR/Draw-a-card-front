@@ -6,6 +6,275 @@ entry last. Owned by `sdd-orchestrator` — see `AGENTS.md` §5.
 
 ---
 
+# Session 2026-08-05 — 006-visual-identity (closed, DONE)
+
+**Started**: 2026-08-05
+**Feature**: 006-visual-identity
+**State**: DONE — all 54 tasks (55 checkbox lines) [X], final review APPROVE
+
+## What happened this session
+
+- Human supplied four mockups (login mobile/web, scan mobile/web) and asked to "implement the
+  design in the actual views". The images are not in the repo, so they were transcribed into
+  **`docs/design-brief-visual-identity.md`** — that file is the authoritative design source for
+  this feature, including its §7 scope decisions.
+- Compared the mockups against the current code and found the gap is far larger than a restyle:
+  - No theme/token layer exists anywhere in `src/` — every screen hardcodes hex values.
+  - `src/features/identity/SignInForm.tsx` is an unstyled English form; the mockup adds a full
+    brand layer plus a distinct web layout.
+  - `src/features/scanner/ScanPlaceholderScreen.tsx` is a "Scanner coming soon" stub, and
+    `004-home-scan-shell` FR-005 **forbids** camera on `/scan` (asserted by a source-inspecting
+    test). The mockup depicts a working scanner with results and priced recent-scans.
+  - The mockups' nav has 5 destinations; the app has 3 (Cartera/Trades are unspecced).
+- Two scoping questions put to the human, both answered:
+  1. **Scan → visual shell only.** Build the appearance, no camera, no data. 004's FR-005 stands.
+  2. **Copy → Spanish and English**, via an i18n layer, "add a feature to choose the language".
+- Registered two features in `feature_list.json` (pure addition, no existing entries touched):
+  - **006-visual-identity** — token layer, shared primitives, login restyle, scan visual shell,
+    i18n layer carrying es+en for these two screens.
+  - **007-localization** — translate the remaining screens + the language-picker UI and its
+    persistence. Depends on 006's i18n layer; do not start it first.
+- Handed 006 to `sdd-orchestrator`. Note it was **explicitly directed to 006**, not left to pick
+  the first `pending` feature (which would have been 002-kyc-document-verification).
+- `spec-writer` wrote `specs/006-visual-identity/{spec,plan,tasks}.md` (+ `checklists/
+  requirements.md`). Cross-checked the brief against the actual current code (not assumed) per
+  the kickoff brief's instruction — three genuine discrepancies found and resolved as recorded
+  defaults in spec.md's Clarifications (same non-blocking, flagged-for-confirmation pattern as
+  `004`/`005`):
+  1. **Font** — no serif is reliably bundled/consistent across iOS/Android/web; recommends
+     bundling Playfair Display 700 via `@expo-google-fonts/playfair-display` + `expo-font`
+     rather than a system-font substitute (Lora named as the runner-up override).
+  2. **Contrast** — computed (not eyeballed) WCAG ratios found FOUR of the brief's §2.1 values
+     miss 4.5:1 (`text.secondary` on `bg.page`, `text.placeholder` on `bg.surface`, `text.link`
+     on every background it's used on, `accent.priceGreen` on `bg.surface`) — plus a discrepancy
+     the brief's own spot-check list didn't anticipate: `text.placeholder` is reused for the
+     viewfinder's dark-background hint text, and no single gray clears 4.5:1 against both a
+     near-white and a near-black surface, so it's split into two tokens
+     (`text.placeholder`/`viewfinder.hintText`). Adjusted values recorded with a before/after
+     table; a new `src/theme/contrast.test.ts` regression-guards them going forward.
+  3. **Scan shell chrome** — the brief describes "the existing sidebar"/"the existing bottom tab
+     bar" around `/scan`, but `004-home-scan-shell` deliberately built `/scan` OUTSIDE the
+     three-destination shell. Recommended default: `/scan` stays the standalone route `004`
+     built (its restyled "Back" affordance stays the sole return path) rather than moving the
+     route into the shell (real expo-router-version risk, bigger structural diff) or duplicating
+     nav-rendering logic in a look-alike rail.
+  - Also disclosed, not hidden: restyling `FormField.tsx` in place (per the explicit instruction
+    to extend it, not add a parallel component) will also visually change
+    `RegistrationForm`/`VerifyPhoneScreen`/`ProfileForm`'s rendered field appearance —
+    `tasks.md`'s Polish phase re-runs the full existing test suite to confirm no behavioral
+    regression.
+  - i18n mechanism: a small hand-rolled lookup (`src/domain/i18n/`, plain TS, zero RN imports) +
+    a thin React context/hook (`src/features/i18n/`) — not `i18next`, justified in plan.md as
+    proportionate to today's two-screen, no-interpolation scope. Default locale hardcoded to
+    Spanish (FR-012), explicitly flagged as a `007-localization` placeholder.
+  - `feature_list.json`'s `006-visual-identity` entry updated to `"status": "spec_ready"`.
+
+## Open questions / blockers (all resolved by session end)
+
+- **Serif display font.** Resolved — human confirmed Playfair Display 700, as-is, at the
+  approval gate.
+- **Contrast verification.** Resolved — human confirmed the four adjusted token values, as-is,
+  at the approval gate.
+- 007-localization's default-locale behavior (device detection vs. hardcoded Spanish) remains
+  undecided — belongs to that feature's spec, not 006's. Still open for 007.
+
+## sdd-orchestrator session (resumed 2026-08-05)
+
+- Bootstrapped: `./init.sh` green (10/10 stages; only the pre-existing expo-doctor/native-dep
+  warnings that predate this feature). Local `main` was 2 commits behind `origin/main` (missing
+  the merged 005-login PR) — fast-forwarded, then replayed this session's uncommitted
+  feature-registration changes (`feature_list.json`, `progress/current.md`,
+  `docs/design-brief-visual-identity.md`) on top. No app code touched.
+- Confirmed target: `006-visual-identity`, still `pending`. Explicitly not picking
+  `002-kyc-document-verification` (the first `pending` entry) per the human's direction.
+- Delegated to `spec-writer` for spec/plan/tasks — done this session (see above). Paused at
+  `spec_ready` for human approval, as required — no implementation this session.
+- **HUMAN APPROVAL GRANTED.** All three recorded defaults confirmed as-is, no overrides: (1)
+  font — Playfair Display 700 via `@expo-google-fonts/playfair-display` + `expo-font`, loaded
+  behind the existing `KycGate`-style loading guard, referenced only via
+  `typography.display.fontFamily`; (2) contrast — the four adjusted values + the
+  `text.placeholder`/`viewfinder.hintText` split, ship exactly as tabled in spec.md,
+  `contrast.test.ts` must compute real ratios (no hardcoded-expected-number degradation); (3)
+  scan chrome — `/scan` stays standalone, restyled "Back" affordance is the sole return path.
+  Two things flagged to hold the line on during implementation: the `FormField` blast radius
+  onto `RegistrationForm`/`VerifyPhoneScreen`/`ProfileForm` is accepted in appearance but not in
+  behavior (Polish-phase full-suite re-run is the regression gate, any resulting test-expectation
+  change gets reviewed as carefully as code); the i18n seam must stay clean/documented for
+  `007-localization` to add a picker onto, not replace.
+- Flipped `feature_list.json`'s `006-visual-identity.status` to `in_progress`.
+- Ran the `feature-branch` skill: local `main` was already up to date with `origin/main`
+  (`777bb9e`); stashed this session's uncommitted spec/registration changes, cut fresh branch
+  `006-visual-identity` from `main@777bb9e` (didn't exist locally or on origin), popped the
+  stash cleanly (no conflicts), recorded `branch_cut_from: "main@777bb9e"` in `feature_list.json`.
+  `./init.sh` green (10/10 stages, only the pre-existing warnings) on the new branch before any
+  task work started.
+- Planned batching for the remaining 53 tasks (checkpoint-aligned, per tasks.md's own phase/
+  subsection structure): T001 (done) | T002-T009 token module | T011-T016 primitives |
+  T017-T022 i18n | T010 root wiring | T023/T024/T024a Field | T025-T027 LoginScreenChrome |
+  T028/T029 SignInForm | T030/T031 RequestPasswordResetForm | T032/T033 ResetPasswordForm |
+  T034-T037 LoginScreen wiring+smoke | T038-T042 scan pieces | T043/T044 ScanShellScreen |
+  T045/T046 test+cleanup | T047-T049 app/scan.tsx+smoke | T050/T051 a11y+responsive |
+  T052-T054 full regression+init.sh.
+- **T001 — done -> progress/impl_006-visual-identity.md, reviewed APPROVED ->
+  progress/review_006-visual-identity.md.** `expo-font`, `expo-linear-gradient` (via `expo
+  install`), `@expo-google-fonts/playfair-display` (via `npm install`) added; no new
+  native-dependency-alignment drift beyond this repo's pre-existing disclosed warnings.
+- **T002-T009 (token module) — done -> progress/impl_006-visual-identity.md (Run 2), reviewed
+  APPROVED -> progress/review_006-visual-identity.md.** `src/theme/{colors,geometry,fonts,
+  typography,shadows,shadows.web,contrast,contrast.test,index}.ts` created. Colors use spec.md's
+  adjusted contrast values (not the brief's originals). `contrast.test.ts` is a real computed
+  regression guard against the live `colors` export, confirmed green (311/311 suite passing).
+  Two disclosed judgment calls, both reviewed and accepted: native `shadows.ts` splits the
+  brief's rgba shadow color into `shadowColor`+`shadowOpacity` (standard RN pattern, avoids
+  double-applying alpha); `label.section`'s letter-spacing reuses `label.field`'s 0.08em (brief
+  gave no explicit number). `./init.sh` green, 10/10 stages, only pre-existing warnings.
+- **T011-T016 (shared primitives) — done -> progress/impl_006-visual-identity.md (Run 3), first
+  review CHANGES_REQUESTED -> progress/review_006-visual-identity.md** (two magic-number
+  literals in `OrDivider.tsx`/`StatusPill.tsx` duplicating `space.md` instead of importing the
+  token — genuine FR-001 regression, everything else in the batch clean). Fixed by
+  `task-implementer`, **re-reviewed APPROVED**. `src/features/ui/{BrandMark,PrimaryButton,
+  SecondaryButton,OrDivider,StatusPill}.tsx` + tests + `README.md` now ship with zero raw hex/
+  magic-literal, full suite + `./init.sh` green.
+- **T017-T022 (i18n layer) — done -> progress/impl_006-visual-identity.md, reviewed APPROVED ->
+  progress/review_006-visual-identity.md.** `src/domain/i18n/{locale,translate,copy/login,
+  copy/scan}.ts` (zero RN imports, confirmed) + `src/features/i18n/LocaleContext.tsx`
+  (`LocaleProvider`/`useLocale`/`useTranslation`) + `README.md`. Dictionaries cover both the
+  brief's explicit login/scan copy (correct Spanish orthography — `CONTRASEÑA`, `Olvidé`,
+  accented) and the existing SignInForm/RequestPasswordResetForm/ResetPasswordForm hardcoded
+  strings, es/en key-parity enforced by type + runtime test. Full suite + `./init.sh` green.
+- **T010 (root layout wiring) — done -> progress/impl_006-visual-identity.md, reviewed
+  APPROVED -> progress/review_006-visual-identity.md.** `app/_layout.tsx`: Playfair Display
+  loaded via `useFonts()` behind the same minimal flex:1 placeholder `KycGate` already uses;
+  `LocaleProvider` wraps the existing `QueryClientProvider`/`KycGate` tree. `KycGate`/
+  `useKycGate()`/`resolveKycRoute()`/`src/domain/kyc-gate.ts` independently confirmed
+  byte-for-byte untouched (highest-risk regression surface for this task, extra scrutiny paid).
+  New test correctly placed per the `_layout.*` colocation exception. Full suite + full
+  `./init.sh` (all 8 stages) green.
+  **PHASE 2 (FOUNDATIONAL) COMPLETE — T001-T022 all [X] and reviewed.**
+- **T023/T024/T024a (Field/FormField restyle) — done -> progress/impl_006-visual-identity.md
+  (Run 7), reviewed APPROVE WITH NITS -> progress/review_006-visual-identity.md.**
+  `FormField.tsx`/`FormField.web.tsx` restyled (borderless+shadow mobile, bordered web);
+  `FormFieldProps` byte-for-byte unchanged; `RegistrationForm`/`VerifyPhoneScreen`/`ProfileForm`
+  call sites and test suites independently re-run, zero regression, zero test-file changes. One
+  disclosed nit (pre-existing, not introduced here): `FormField`'s error-text color is a raw hex
+  not sourced from `src/theme` (no danger/error token exists yet in the brief's palette) —
+  deferred to Polish phase, not blocking.
+- **T025-T027 (LoginScreenChrome) — done -> progress/impl_006-visual-identity.md, reviewed
+  APPROVED -> progress/review_006-visual-identity.md.** Mobile gradient wash
+  (`expo-linear-gradient`) + web radial-bloom card container, both passthrough-tested (children
+  unchanged). Translucent-lime-wash color handling (not in `src/theme` today, opaque
+  `brand.primary` only) resolved as a disclosed, token-derived exception — reviewer judged
+  proportionate for two decorative backgrounds.
+- **T028/T029 (SignInForm restyle) — done -> progress/impl_006-visual-identity.md, reviewed
+  APPROVED -> progress/review_006-visual-identity.md.** Field/PrimaryButton/SecondaryButton/
+  OrDivider composed per brief §4 items 4-10, all copy routed through `useTranslation(
+  loginCopy)`. Prop contract (`onSubmit`/`onForgotPassword`/`isSubmitting`/`serverError`/
+  `confirmationMessage`/`initialEmail`) and validation/handler logic independently confirmed
+  byte-for-byte unchanged; every pre-restyle test assertion still passes unmodified; "Create
+  account" Link href confirmed unchanged.
+- **T030/T031 (RequestPasswordResetForm restyle) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** Same Field/PrimaryButton/
+  useTranslation(loginCopy) pattern as SignInForm; onSubmit/onBack/isSubmitting/serverError/
+  anti-enumeration copy logic unchanged. This batch rippled into `LoginScreen.test.tsx`/
+  `app/(auth)/login.test.tsx` (outside its declared file scope) — reviewer specifically
+  scrutinized this per the human's "test-expectation changes reviewed as carefully as code"
+  instruction: confirmed both diffs are query-string-only fixes (translated placeholder/label
+  text lookups following the copy move), zero assertion removed or weakened, FR-006's
+  no-`useRouter()`-on-success guard specifically untouched and still passing.
+- **T032/T033 (ResetPasswordForm restyle) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** Field-wrapped email/new-password
+  + unchanged `CodeInput`, `PrimaryButton` "Set new password", restyled resend/back-to-sign-in
+  consistent with the prior batch's vocabulary. `RESEND_COOLDOWN_SECONDS` timer and
+  `serverError.field === "code"` wiring confirmed byte-for-byte unchanged. Same
+  `LoginScreen.test.tsx`/`login.test.tsx` ripple pattern as T030/T031, again scrutinized and
+  confirmed narrow/query-only, FR-006 guard untouched.
+- **T034-T037 (LoginScreen wiring + smoke check) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** `LoginScreen.tsx` wrapped in
+  `LoginScreenChrome`, BrandMark/title/tagline gated to `mode === "sign-in"` only. Zero change to
+  any handler/state-machine function body, independently line-diffed. FR-006's no-`useRouter()`
+  guard re-verified live (would fail if regressed, not just currently passing). `app/(auth)/
+  login.tsx` needed no change. T037's manual smoke check honestly disclosed as a substitute
+  (no real browser/simulator in this sandbox) — component tests + clean bundle export instead,
+  not overstated.
+  **PHASE 3 (LOGIN RESTYLE, T023-T037) COMPLETE — 364/364 tests passing, zero 005-login
+  regression.**
+- **T038-T042 (scan presentational pieces) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** `src/features/scanner/
+  {Viewfinder,ScanSearchField,UploadDropzone,EmptyResultsPanel,RecentScansList}.tsx` + tests.
+  Zero camera-module import confirmed by grep across all five (the hardest constraint in this
+  feature). `RecentScansList` (FR-008) confirmed zero `src/domain` import/fetch, placeholder
+  data clearly commented. All copy through `useTranslation(scanCopy)`, all styling token-driven.
+- **T043/T044 (ScanShellScreen mobile+web) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** Mobile single-column;
+  web reuses `src/domain/navigation.ts`'s existing `BREAKPOINT_PX` (not redefined) for the
+  two-column/>=768px vs one-column/<768px collapse, verified both sides of the threshold.
+  "Escanear carta" PrimaryButton confirmed genuinely disabled/no-op with an FR-007 comment.
+  Zero camera import in the composition.
+- **T045/T046 (camera-guard migration + old-file cleanup) — done ->
+  progress/impl_006-visual-identity.md, reviewed APPROVED -> progress/review_006-visual-identity.md.**
+  `ScanShellScreen.test.tsx`'s camera-import guard now covers all 7 scanner files this feature
+  added, confirmed at least as strict as the original `ScanPlaceholderScreen.test.tsx`, migrated
+  before deletion (repo never without an active guard). Old placeholder file+test fully removed,
+  zero remaining repo reference confirmed by grep.
+- **T047-T049 (app/scan.tsx wiring + smoke) — done -> progress/impl_006-visual-identity.md,
+  reviewed APPROVED -> progress/review_006-visual-identity.md.** `ScanShellScreen` wired in
+  place of the retired `ScanPlaceholderScreen`; "Back" `Pressable`'s `onPress`/accessibility/
+  testID confirmed byte-for-byte unchanged (only styling retokenized) — 004 US2 AS2 intact.
+  `Platform.select` correctly NOT used (both platforms share one token value, verified by grep;
+  not a scope violation). Camera-import grep re-confirmed zero matches.
+  **PHASE 4 (SCAN VISUAL SHELL, T038-T049) COMPLETE.** 388/388 tests passing.
+- **T050/T051 (a11y + responsive polish) — done -> progress/impl_006-visual-identity.md
+  (Run 17), reviewed APPROVED -> progress/review_006-visual-identity.md.** Real fixes made and
+  independently re-verified: ScrollView added to LoginScreenChrome/ScanShellScreen (fixes a
+  genuine short-viewport clipping bug, zero regression to passthrough/FR-006 guards);
+  Viewfinder's gear chip `aria-hidden` swap confirmed technically correct on both native+web by
+  reading RN/react-native-web source directly; app/scan.tsx Back copy now i18n'd (pre-existing
+  keys); new computed `colors.text.danger` token replaces the raw error-text hex across
+  FormField/SignInForm/RequestPasswordResetForm/ResetPasswordForm (resolves the T023-T024a nit),
+  contrast-tested, zero behavioral regression in any of the four forms. 394/394 tests, full
+  `./init.sh` green.
+- **T052-T054 (final regression gate) — done -> progress/impl_006-visual-identity.md (Run 18),
+  reviewed APPROVE -> progress/review_006-visual-identity.md.** Zero-source-change verification
+  pass, every claim independently reproduced by code-reviewer (not accepted on report alone):
+  full suite 394/394 across 63 suites, `contrast.test.ts` re-confirmed a genuine computed guard,
+  camera-import grep re-confirmed zero actual import/require lines under `src/features/scanner/`,
+  full `./init.sh` (all 8 stages, no skip flags) `RESULT: SUCCESS` with zero new
+  native-dependency-alignment drift attributable to this feature's three T001 additions, all
+  three bundle exports clean (confirming neither the font/gradient additions nor the
+  `ScanPlaceholderScreen` removal broke any target). The human's specifically named concern (a
+  pre-existing test edited to dodge a `FormField`-restyle regression) does not apply — no
+  pre-existing test was touched in this batch at all; `RegistrationForm.test.tsx`/
+  `VerifyPhoneScreen.test.tsx`/`ProfileForm.test.tsx` never needed a fix because they already
+  assert behavior/role/text, confirmed by direct inspection.
+  **ALL 54 TASKS (55 CHECKBOX LINES) [X]. FEATURE-LEVEL FINAL REVIEW: APPROVE, CHECKPOINTS.md
+  C1-C6 all satisfied (the two empty boxes are explicitly orchestrator-scoped: the
+  `progress/history.md` entry and the `feature_list.json` status flip to `done`, both completed
+  below).**
+- sdd-orchestrator independently re-ran `./init.sh` one final time before closing: green, 10/10
+  stages, only the same pre-existing warnings. Flipped `feature_list.json`'s
+  `006-visual-identity.status` to `done` with a comprehensive closing summary in its `notes`
+  field, mirroring the pattern used for 001/004/005. Session closed; `progress/current.md` reset
+  to its template.
+
+## Feature complete — 006-visual-identity is DONE
+
+All work delegated per AGENTS.md's SDD lifecycle: `spec-writer` (spec/plan/tasks, paused at
+`spec_ready` for human approval) → human approval with all three recorded design defaults
+confirmed as-is (Playfair Display font, four adjusted contrast values, `/scan` staying
+standalone) → `feature-branch` skill (branch cut from `main@777bb9e`) → 18
+`task-implementer` runs across 54 tasks, each independently reviewed by `code-reviewer` (20
+review rounds total, one CHANGES_REQUESTED cycle on T011-T016, fixed and re-approved; two
+APPROVE WITH NITS rounds, both nits later resolved during Polish) → final feature-level APPROVE.
+Ships the app's first visual-identity token layer, six shared primitives, the login screen and
+scan-screen visual shell fully restyled on mobile+web, and an es/en i18n layer — with zero
+disclosed regression to 005-login's FR-006 or 004-home-scan-shell's FR-005/US2 AS2. Two genuine
+bugs (a ScrollView-clipping issue, a web-a11y attribute gap) were caught and fixed during Polish,
+not shipped silently. See `feature_list.json`'s `006-visual-identity` entry for the full closing
+summary, and `progress/impl_006-visual-identity.md` (18 runs) /
+`progress/review_006-visual-identity.md` (20 review rounds) for complete detail.
+
+---
+
 
 ---
 
