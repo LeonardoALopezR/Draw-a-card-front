@@ -36,6 +36,12 @@
 jest.mock("@supabase/supabase-js", () => {
   const mockSignInWithPassword = jest.fn();
   const mockResetPasswordForEmail = jest.fn();
+  // T020 (010-registration-redesign, carried-over review Finding 1): getCurrentSessionEmail()'s
+  // own dedicated mock, wired onto the SAME shared singleton auth object as
+  // mockSignInWithPassword/mockResetPasswordForEmail below — mirrors exactly how the real
+  // src/lib/supabase-client.ts calls supabase.auth.getSession() on that same module-level
+  // singleton, not a throwaway recovery client.
+  const mockGetSession = jest.fn();
 
   // Tracks the auth object handed back on every createClient() call AFTER the first (the
   // module-level `supabase` singleton) — i.e. every throwaway recovery-session client
@@ -64,6 +70,7 @@ jest.mock("@supabase/supabase-js", () => {
         auth: {
           signInWithPassword: (...args: unknown[]) => mockSignInWithPassword(...args),
           resetPasswordForEmail: (...args: unknown[]) => mockResetPasswordForEmail(...args),
+          getSession: (...args: unknown[]) => mockGetSession(...args),
         },
       };
     }
@@ -82,6 +89,7 @@ jest.mock("@supabase/supabase-js", () => {
       mockCreateClient,
       mockSignInWithPassword,
       mockResetPasswordForEmail,
+      mockGetSession,
       recoveryAuthMocks,
     },
   };
@@ -89,22 +97,29 @@ jest.mock("@supabase/supabase-js", () => {
 
 import {
   createPasswordRecoverySession,
+  getCurrentSessionEmail,
   NETWORK_SIGN_IN_ERROR_MESSAGE,
   requestPasswordReset,
   signInWithPassword,
 } from "./supabase-client";
 
-const { mockCreateClient, mockSignInWithPassword, mockResetPasswordForEmail, recoveryAuthMocks } =
-  (
-    jest.requireMock("@supabase/supabase-js") as {
-      __supabaseMockState: {
-        mockCreateClient: jest.Mock;
-        mockSignInWithPassword: jest.Mock;
-        mockResetPasswordForEmail: jest.Mock;
-        recoveryAuthMocks: { verifyOtp: jest.Mock; updateUser: jest.Mock; signOut: jest.Mock }[];
-      };
-    }
-  ).__supabaseMockState;
+const {
+  mockCreateClient,
+  mockSignInWithPassword,
+  mockResetPasswordForEmail,
+  mockGetSession,
+  recoveryAuthMocks,
+} = (
+  jest.requireMock("@supabase/supabase-js") as {
+    __supabaseMockState: {
+      mockCreateClient: jest.Mock;
+      mockSignInWithPassword: jest.Mock;
+      mockResetPasswordForEmail: jest.Mock;
+      mockGetSession: jest.Mock;
+      recoveryAuthMocks: { verifyOtp: jest.Mock; updateUser: jest.Mock; signOut: jest.Mock }[];
+    };
+  }
+).__supabaseMockState;
 
 describe("signInWithPassword", () => {
   afterEach(() => {
@@ -166,6 +181,52 @@ describe("signInWithPassword", () => {
     const networkResult = await signInWithPassword("ana@example.com", "supersecret1");
 
     expect(networkResult.error).not.toBe(credentialsResult.error);
+  });
+});
+
+// T020 (010-registration-redesign, carried-over review Finding 1 from Review round 4): mirrors
+// signInWithPassword's own describe block above exactly — same MUST-NEVER-THROW try/catch shape
+// wraps supabase.auth.getSession() here, on the SAME shared/ambient `supabase` singleton
+// (getCurrentSessionEmail is the one function src/lib/registration-draft.ts's cross-account
+// email-scoping guard depends on to fail closed — see that file's own doc comment for the leak it
+// closes). Before this task, this real implementation (the getSession() call, the
+// `data.session?.user.email ?? null` mapping, and the try/catch itself) was only ever exercised
+// through a full jest.mock in app/(auth)/verify-phone.test.tsx — never actually executed by any
+// test in the suite.
+describe("getCurrentSessionEmail", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // The common/happy path — a real session with a real user email.
+  it("returns the signed-in user's email when the SDK resolves with a session", async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { user: { email: "ana@example.com" } } },
+    });
+
+    const result = await getCurrentSessionEmail();
+
+    expect(result).toBe("ana@example.com");
+  });
+
+  // No session (signed out) resolves cleanly to null, not a thrown error or undefined.
+  it("returns null when the SDK resolves with no session", async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+
+    const result = await getCurrentSessionEmail();
+
+    expect(result).toBeNull();
+  });
+
+  // THE REGRESSION TEST FOR THIS GAP: the underlying SDK call REJECTS (a network-level failure),
+  // the same class of defect T034 (signInWithPassword, above) found via manual iOS-simulator
+  // testing. Must resolve to null (fail CLOSED, per this file's own doc comment on
+  // getCurrentSessionEmail — an unknown session email must never be treated as a match by
+  // src/lib/registration-draft.ts's draftMatchesEmail()), not let the rejection escape.
+  it("does not throw and resolves to null when the underlying call rejects", async () => {
+    mockGetSession.mockRejectedValue(new TypeError("Network request failed"));
+
+    await expect(getCurrentSessionEmail()).resolves.toBeNull();
   });
 });
 

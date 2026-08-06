@@ -1023,3 +1023,324 @@ files (FR-014 held); no live import of any retired Amigos/Social component.
 
 Work sits **uncommitted** on branch `008-scan-experience`. Nothing was committed or pushed, and no
 PR was opened — left at the human's discretion.
+
+---
+
+# Session 2026-08-06 — 010-registration-redesign (registration redesign: Crear cuenta)
+
+**Started**: 2026-08-06
+**Feature**: 010-registration-redesign
+**State**: `in_progress` on branch `010-registration-redesign` (cut from `main@98c0b45`)
+
+## What happened this session
+
+- Human supplied eight mockups of a redesigned **`Crear cuenta`** screen (Usuario tab and Tienda
+  tab, each in mobile and web, each split across a top and bottom screenshot) and asked for a new
+  feature: split `Nombre completo` into three inputs, turn `Nacionalidad` into a catalog, persist
+  every in-scope field to the backend, ignore the `DOCUMENTOS` section on both tabs plus the
+  Tienda tab's blue PLD/AML banner and `Datos bancarios (PLD)`.
+- Transcribed the mockups into **`docs/design-brief-registration-redesign.md`** (the images are
+  not in the repo — same precedent as `docs/design-brief-visual-identity.md` for `006`). That file
+  is the authoritative design source for this feature.
+- **Cross-checked the mockups against the real backend** (`Draw-a-card/prisma/schema.prisma`,
+  `src/modules/identity/validation.ts`, `routes.ts`) rather than assuming. Headline finding:
+  **every column the redesign needs already exists** — `User.nombre`, `apellidoPaterno`,
+  `apellidoMaterno`, `birthDate`, `nationality`, `curp`, `rfc`, and
+  `BusinessProfile.commercialName` / `rfc` / `fiscalAddress`, all shipped by backend
+  `001-user-registration-kyc`. **No migration is needed** for the name split or the birthday.
+- Found six mockup-vs-backend conflicts. Three were put to the human and answered:
+  1. **Flow** — mockup shows one screen; backend is register → verify-phone → profile. Chosen:
+     keep the single screen, run the three existing calls behind it, no backend flow change. The
+     SMS verify-phone screen stays a visible interruption.
+  2. **Nationality catalog** — chosen: backend-served catalog (not a static frontend list), so the
+     list is one source of truth and editable without an app release.
+  3. **Tienda requires personal fields** — `profileBusinessSchema` extends
+     `profilePersonalSchema`. Chosen: relax the backend; the Tienda tab ships exactly as drawn.
+  The other three (no password field anywhere in the mockups; one combined `CURP / RFC` input vs
+  two required columns; the `RFC (PLD)` blue marker whose explanatory banner is out of scope) plus
+  the date-picker dependency question carry recommended defaults in the design brief §7 and are
+  **flagged for confirmation at the `spec_ready` gate**.
+- Registered **`010-registration-redesign`** (`pending`, `sdd: true`) in `feature_list.json` with
+  the full kickoff brief.
+- Registered **`015-registration-profile-support`** (`pending`, `sdd: true`) in the backend repo's
+  `feature_list.json` — two user stories: the nationality catalog (+ validating `nationality`
+  against it on write) and the business-profile relaxation. Purely additive edit; the backend's
+  own uncommitted `014` entry and `progress/current.md` changes were left untouched.
+
+- Ran **`spec-writer`** on `010-registration-redesign`. It wrote
+  `specs/010-registration-redesign/{spec,plan,tasks}.md` (+ a checklist), found zero blocking
+  `[NEEDS CLARIFICATION]` markers, and flipped the feature to `spec_ready`. 30 tasks
+  (T001–T030) across Setup / Foundational / US1 (Usuario) / US2 (Tienda) / Polish; the five task
+  lines whose real-network behaviour depends on backend `015` are labelled `[BLOCKED-ON-015]` and
+  remain buildable against a mocked client.
+- Verified the output rather than taking it on trust: no open markers, no pre-existing
+  `feature_list.json` entry altered, the kickoff brief preserved intact. Fixed one markdown typo
+  in `spec.md` and updated the feature note's now-stale "no spec written yet" tail.
+- **Material finding the kickoff brief did not contain**, surfaced by spec-writer's backend
+  cross-check: backend `004-session-authentication` **deleted the dev-only `X-User-Id` header
+  entirely, in every `NODE_ENV`** (not just outside dev/test, as `001`'s spec documented), in
+  favour of real Bearer-JWT verification. `src/lib/api.ts` already sends the Supabase access token
+  as a Bearer header so nothing new is needed here, but the `setCurrentUserId` code and the doc
+  comments calling it load-bearing (`src/domain/registration.ts`, `src/domain/profile.ts`) are now
+  stale and inert — `tasks.md` T014 corrects the comments only, deliberately not the code. The
+  consequence that matters: with that fallback gone, **there is no backend configuration available
+  today under which this feature's phone-verify/profile calls can be exercised end-to-end against
+  a live backend** — only `POST /identity/register(/business)`, which needs no token. Real
+  end-to-end coverage additionally needs backend `014-supabase-live-auth-integration` (`pending`).
+
+- **Human approved at the gate**, confirming all four recorded defaults as written. Feature flipped
+  to `in_progress`; `feature-branch` cut **`010-registration-redesign` from `main@98c0b45`**.
+  `./init.sh` on the fresh branch: **`RESULT: SUCCESS` (10/10 stages)** — only the pre-existing
+  expo-doctor / native-dependency-alignment warnings that predate this feature.
+- **A `git stash pop` conflict on `feature_list.json` was hit and resolved, disclosed here rather
+  than silently:** `main` had advanced 7 commits (PR #6, the 008 merge) while this session's work
+  sat on the local `008-scan-experience` branch. Resolved by rebuilding the file programmatically
+  — `main`'s eight entries were verified **byte-identical** to the stashed copy's, `009`'s entry
+  verified byte-identical to `d6b4e82`'s, and `010` confirmed the only genuinely new entry — not
+  by `--ours`/`--theirs`. Nothing was discarded.
+
+### Implementation progress (19 of 30 tasks `[X]`)
+
+Batched `task-implementer` → `code-reviewer` rounds, one review per batch:
+
+| Batch | Tasks | Verdict |
+|---|---|---|
+| Run 1 | T001 — the `@react-native-community/datetimepicker` dependency | folded into the next review |
+| Run 2 | T002–T007 — theme tokens, `SegmentedControl`, `Select`, `DateField`, `FormField.labelCase` | **CHANGES_REQUESTED** → fixed → **APPROVED** |
+| Run 3 | T006 review fixes | (see above) |
+| Run 4 | T008–T014 — schemas, registration draft, nationality domain + hook, i18n copy, stale-comment fix | **APPROVED**, zero findings |
+| Run 5 | T015–T017 — `UsuarioForm`, `TiendaForm`, `CrearCuentaScreen` | **APPROVED** with one nit |
+| Run 6 | T018–T019 — route rewiring + the nit + a PII guard | in review |
+
+- **Run 2's blocking finding**: `Select` hardcoded English copy (`"Retry"`, `"Search"`, `"Loading…"`)
+  with no localization escape hatch, breaking FR-007 and the `src/features/ui` convention that
+  every primitive takes 100% of its copy as props; plus a raw `rgba(0,0,0,0.4)` backdrop literal.
+  Both fixed while `Select` still had zero consumers — copy-override props on the shared type
+  surface, and a new `colors.overlay.backdrop` token.
+- **Run 5's nit**: magic-number type scale (`fontSize: 22`/`fontWeight: "600"`) in
+  `CrearCuentaScreen`'s session-issue chrome; fixed in Run 6 via a new `typography` token.
+- **Run 6 found a real cross-account PII leak** (traced by `task-implementer`, the load-bearing
+  link independently re-confirmed here against `src/domain/kyc-gate.ts:72`): user A registers,
+  Supabase sign-in fails (`sessionIssue`) so no session exists and A's draft — name, CURP, RFC,
+  birth date — sits unconsumed in module memory; A navigates client-side to `/login` (no reload,
+  so module state survives) and signs in as an existing account B whose `phoneVerifiedAt` is null;
+  `resolveKycRoute()` sends B to `/verify-phone`, whose success handler would consume and submit
+  **A's** draft as B's profile. Closed by scoping each draft to the email it was written for
+  (`draftMatchesEmail`, failing closed on an unknown session email) and discarding a mismatched
+  draft rather than leaving it for a third visitor. **The guard reaches into three
+  already-approved files** (`registration-draft.ts`, `useCrearCuentaSubmit.ts`,
+  `supabase-client.ts`), so it is under independent review rather than accepted on the
+  implementer's own say-so.
+
+### T023 — US1 manual smoke check (Level 3), run by the orchestrator on 2026-08-06
+
+**Live services actually running** (stated precisely, per `docs/verification.md`'s bar): the Expo
+web dev server (`npx expo start --web`, port 8081) **and the real local backend** (`:3000`,
+`/identity/ping` → HTTP 200). Supabase was configured but **not reachable** from this sandbox.
+Driven through a real browser against real DOM — not RNTL.
+
+Confirmed working:
+
+- The screen is **reachable by the real user path**: `/login` → "Crear cuenta" link → `/register`
+  holds and renders. (A *direct* URL load of `/register` bounces to `/login` — pre-existing gate
+  behaviour from `005-login`, unchanged by this feature, since the resolved route transitions on a
+  cold load.)
+- Both tabs render per the design brief, with **properly accented Spanish** (`Correo electrónico`,
+  `Contraseña`, `Política`) — the mockups' unaccented copy was correctly treated as a tool artifact.
+- Usuario: three name inputs (`Nombre(s)`/`Apellido paterno`/`Apellido materno`), the added
+  `Contraseña` field, native date control, **`CURP` and `RFC` as two separate fields**, no
+  `DOCUMENTOS` section. All four approved Clarifications visibly hold.
+- Tienda: exactly the seven specified fields, **zero personal fields leaking**, no PLD banner, no
+  `Datos bancarios`/CLABE, no `DOCUMENTOS`.
+- **Real registration works end to end**: `POST http://localhost:3000/identity/register/business`
+  fired with **exactly the four credential fields** (`email`, `password`, `phone`, `username` — no
+  profile data), and a direct probe of the same endpoint returned **HTTP 201** with a real `user`
+  and `kycStatus: "pending"`.
+- **`001-registration-kyc`'s session-failure recovery survived the rewrite**: with Supabase
+  unreachable, the UI renders "Tu cuenta fue creada / No pudimos iniciar tu sesión automáticamente
+  (Failed to fetch)" and **holds at `/register`** (sampled every 150 ms for 3 s) rather than
+  stranding the user.
+- Nationality shows its **Spanish** error state + `Reintentar` — the correct, disclosed outcome
+  with backend `015` unshipped, not a defect.
+- **No horizontal overflow** at 375 px or 1280 px; **no interactive element under 44 px**.
+
+**One real defect found, which the full test suite did not catch** (this repo's recurring
+"green tests, broken app" pattern): `DateField.web.tsx`'s `RawDateInput` passes `testID` straight
+to a raw DOM `<input>`, producing a React error on every render of the Usuario tab — *"React does
+not recognize the `testID` prop on a DOM element… spell it as lowercase `testid`"*. Cosmetic in
+effect, but it is an error-level console message on the feature's primary screen.
+
+**Not exercised, stated plainly rather than implied:**
+
+- **A full Usuario-tab submission is unreachable today** — the nationality catalog has no options
+  to select, so the form cannot be completed. This is the expected `[BLOCKED-ON-015]` consequence,
+  and it is why the live registration call above was driven through the Tienda tab instead.
+- **The phone-verification and profile calls were never exercised.** Supabase sign-in fails from
+  this sandbox (`Failed to fetch`), so no session and no JWT ever exists, exactly as `spec.md`'s
+  Assumptions predicted. Backend `014-supabase-live-auth-integration` is what unblocks this.
+- **No iOS/Android device or simulator was used at any point** in this check.
+
+### T023's defect — fixed and re-verified in the browser (2026-08-06)
+
+`DateField.web.tsx`'s `RawDateInput` now renames `testID` to `data-testid` before it reaches the
+raw DOM `<input>`, matching what react-native-web's own `createDOMProps` does for its host
+components. Confirmed in a **clean browser tab**: the element renders
+`type, aria-label, data-testid, value, style` — no stray `testid` — and **zero `testID` console
+warnings**. A regression test asserts both directions (`data-testid` present *and* `testID`
+absent), since checking only the former would still pass if both were forwarded.
+
+Full suite: **84 suites / 612 tests green**, `./init.sh` `RESULT: SUCCESS (10/10)`.
+
+**Process note, recorded rather than glossed over:** the `.web.test.tsx` query change was made by
+the orchestrator, not `task-implementer`. The four existing `getByTestId("birth-date-input")`
+queries broke once the rename landed (RNTL matches the `testID` prop, which by design no longer
+reaches that node); they were switched to `getByLabelText("Fecha de nacimiento")`, which resolves
+the same element via the `aria-label` the input already carried, keeps every assertion identical
+in strength, and additionally asserts the field is reachable the way a screen-reader user reaches
+it. **This caused a real collision** — the orchestrator judged the agent stalled after ~4 minutes
+of no file writes and took the file over while it was in fact still working, so both wrote to
+`DateField.web.tsx`/`DateField.web.test.tsx` concurrently for a short window. Final on-disk state
+was verified correct afterwards, but the lesson stands: a quiet agent is not a stopped agent, and
+the right move was `SendMessage` alone rather than `SendMessage` plus editing.
+
+### T025 — US2 (Tienda) manual smoke check, run by the orchestrator on 2026-08-06
+
+Same live services as T023: Expo web dev server + the **real local backend** on `:3000`. Supabase
+remains unreachable from this sandbox.
+
+Confirmed:
+
+- **No personal-account field is ever rendered on the Tienda tab** — checked at four points
+  (Usuario default, Tienda selected, Tienda filled, after submit). The Usuario tab shows all six
+  (`Nombre(s)`, `Apellido paterno`, `Apellido materno`, `Fecha de nacimiento`, `Nacionalidad`,
+  `CURP`); Tienda shows **zero** at every stage.
+- **`POST http://localhost:3000/identity/register/business` fires with exactly the four credential
+  fields** (`email`, `password`, `phone`, `username`) — verified twice with distinct accounts,
+  request bodies captured. HTTP 201 confirmed by direct probe in T023.
+- The session-failure recovery view ("Tu cuenta fue creada / No pudimos iniciar tu sesión
+  automáticamente (Failed to fetch)") renders and holds at `/register`.
+
+**Not reachable, so not verified** (identical to T023, same root cause): `/verify-phone` is never
+reached, because Supabase sign-in fails from this sandbox so no session is established. The
+`[BLOCKED-ON-015]` step this task exists to observe — the automatic profile submission failing
+against today's `profileBusinessSchema` and landing on the FR-010 recovery screen — **could not be
+attempted at all**, since it sits behind phone verification. This is *not* evidence that it works;
+it is untested and stays untested until backend `014` (Supabase auth) and `015` (business-profile
+relaxation) ship.
+
+**One genuine intermittency found, not chased down — needs follow-up:** the post-registration
+outcome is **non-deterministic**. Across repeated identical Tienda submissions, sometimes the
+recovery view renders and holds at `/register`, and sometimes the app lands on `/login` instead,
+losing the "Tu cuenta fue creada" message entirely. A user who hits the second case has a real
+account but no indication of it, and retrying registration would fail with `EmailTaken`. Likely a
+race between `useCrearCuentaSubmit`'s `setCurrentUserId`/react-query cache write causing
+`useKycGate` to re-resolve (firing the root `<Redirect>` to `/login`) and the `sessionIssue` view
+rendering. **Believed pre-existing** — the gate, `useKycGate`, and the cache-write mechanism are
+all untouched by this feature (`001-registration-kyc` T031/T033 built them) — but it surfaces on
+this feature's screen and was never observed before because no prior session ever ran this path
+against a live backend. Not this feature's regression to fix unilaterally; a candidate for
+`009-verification-hardening` or a targeted follow-up.
+
+### T029 — real iOS Simulator pass, run by the orchestrator on 2026-08-06
+
+**A simulator WAS available and WAS used** — booted iPhone 17 Pro (iOS 26.5), Expo Go, real bundle
+served by the running Metro dev server, real taps and swipes, real device screenshots. This is the
+**first time this feature has been seen on a device**. (Note: `expo-doctor` warns the host Xcode
+26.6 exceeds Expo SDK 51's supported ≤16.2 — that affects native *builds*; running through Expo Go
+worked regardless.)
+
+Confirmed on device: the redesigned `Crear cuenta` screen renders with the `006` identity; the
+`Usuario`/`Tienda` segmented control, the three name inputs, `Contraseña`, `CURP` and `RFC` as two
+separate fields, the consent rows and `Registrarse` all render correctly; the nationality field
+shows its Spanish error + `Reintentar` on native exactly as on web; date placeholder is correctly
+localized (`dd/mm/aaaa`).
+
+**Two device-only defects found — neither is catchable by Jest, the web browser, or type-check,
+and both are exactly why this task exists:**
+
+1. **No safe-area inset on the native screen.** The `Crear cuenta` title renders *underneath* the
+   status bar and Dynamic Island at rest, and content scrolls under the status bar. This is the
+   same defect class `004-home-scan-shell` already hit and fixed with `useSafeAreaInsets()`
+   (`react-native-safe-area-context` is already a dependency and already used elsewhere in this
+   app) — the new `CrearCuentaScreen.tsx` did not adopt it.
+2. **The native date picker renders outside its own field.** Tapping `Fecha de nacimiento` opens
+   the real iOS `DateTimePicker`, but it appears as a separate compact chip (`6 Aug 2026`)
+   *below and to the right of* the styled pill, while the pill itself continues to show an empty
+   `dd/mm/aaaa` placeholder. So a user sees two controls and an apparently-empty field after
+   picking a date. The web variant is unaffected (`<input type="date">` renders inline).
+
+**Not covered in this pass, stated rather than implied:** no VoiceOver session was run (the
+`Select` modal's screen-reader behaviour is therefore unverified on device); no iPad/tablet size
+was exercised; no Android emulator was available at any point, consistent with every prior feature
+in this repo.
+
+### T029's two device defects — fixed and RE-VERIFIED ON THE DEVICE (2026-08-06)
+
+Both fixes were confirmed the only way they can be: a fresh bundle on the **booted iPhone 17 Pro**,
+real taps, real screenshots. Unit tests cannot see either behaviour and are explicitly not the
+evidence here.
+
+1. **Safe-area inset** — the `Crear cuenta` title now renders clear of the status bar and Dynamic
+   Island, where it was previously clipped underneath them.
+2. **Native date picker** — tapping `Fecha de nacimiento` now opens a proper modal sheet (spinner
+   + a brand-lime `Aceptar` button, dimmed backdrop) instead of a detached compact chip, and the
+   chosen value lands **inside the field**: the pill reads `06/08/2026` in the correct
+   `dd/mm/yyyy` form. Previously the pill stayed on its empty placeholder while a separate chip
+   held the value.
+3. **Focus ring** (`DateField.web.tsx`'s `outline: "none"`, T027's reported-not-fixed finding) —
+   fixed with a real focus-visible ring from `src/theme`, covered by a genuine unit test (a pure
+   style computation, so a test *is* real proof here, unlike 1 and 2).
+
+Suite after the fixes: **85 suites / 630 tests green**, `tsc` clean.
+
+### T028 — responsive check, run by the orchestrator
+
+**Exercised live**: web at **375 px** and **1280 px**, both tabs, against a real running dev server
+via browser automation — no horizontal overflow at either width, and no interactive element under
+44 px. Plus the **iPhone 17 Pro phone form factor natively**, via Expo Go on the booted simulator
+(the screenshots above).
+
+**Not exercised**: iPad/tablet form factors, and any Android device or emulator (none available in
+this environment at any point, consistent with every prior feature in this repo). Recorded as a
+gap, not implied as covered.
+
+## Open questions / blockers
+
+- **Unmerged commit on another branch, needs a human decision:** `d6b4e82`
+  ("docs(009): register verification-hardening") exists only on the local `008-scan-experience`
+  branch — `main` has the 008 merge (PR #6) but *not* that commit, so `009-verification-hardening`
+  is registered nowhere on `main`. It is carried on this branch now as a side effect of the stash,
+  which means `010`'s eventual PR would drag an unrelated `009` registration into `main` unless
+  it is landed separately first. Not this feature's to fix unilaterally.
+- Frontend `010` depends on backend `015` for two things only: the nationality picker (US1) and a
+  working Tienda profile submission (US2). Everything else proceeds in parallel — sequence the
+  tasks so the `015`-dependent work stays isolated and identifiable.
+- No select/dropdown/picker primitive exists in `src/features/ui/` today; the nationality picker
+  needs one built as a shared primitive.
+
+## Next step
+
+- Await the Run 6 review verdict (T018–T019 + the PII guard). If the reviewer disputes the leak
+  chain, the guard comes out; if it stands, the three approved-file edits are ratified.
+- Then T020 (wire the nationality `Select` to `useNationalities`, `[BLOCKED-ON-015]` for network
+  verification only), T021/T022 (restyle `ProfileForm` as the recovery screen, delete the
+  superseded `RegistrationForm`), T023 (US1 manual smoke), T024–T026 (US2), T027–T030 (polish:
+  a11y, responsive, iOS Simulator, final `./init.sh`).
+- **Two verification limits to state plainly rather than let a green checkbox imply coverage:**
+  (a) T029's iOS Simulator pass is likely blocked — `expo-doctor` reports the local Xcode 26.6.0
+  is incompatible with Expo SDK 51 (requires ≤16.2.0), and the fix needs the human's password;
+  (b) T023/T025's smoke checks can only exercise registration itself against a live backend —
+  the phone-verify and profile calls have no working auth path until backend
+  `014-supabase-live-auth-integration` ships (see the Assumptions note above).
+- On approval: flip `010` to `in_progress`, invoke the `feature-branch` skill to sync `main` and
+  cut `010-registration-redesign`, then delegate T001 onward to `task-implementer` with
+  `code-reviewer` between increments. HEAD is currently on `008-scan-experience`; nothing is
+  committed.
+- Backend `015-registration-profile-support` is still `pending` and unspec'd. It does not block
+  the gate or the first ~19 tasks, but it does block real-network verification of the nationality
+  picker and the Tienda submission — worth spec'ing in the backend repo in parallel.
+
+
+### State at session close
+
+Feature `010-registration-redesign` marked **done** (30/30 tasks, 7 review rounds, `./init.sh` RESULT: SUCCESS 10/10, 85 suites / 630 tests). Committed on branch `010-registration-redesign` and a PR opened to `main` at the human's explicit request.

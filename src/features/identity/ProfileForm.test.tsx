@@ -228,4 +228,24 @@ describe("ProfileForm", () => {
     expect(submitted.commercialName).toBe("Tienda Ana");
     expect(submitted.fiscalAddress).toBe("Calle Falsa 123, CDMX");
   });
+
+  // T027 (specs/010-registration-redesign, FR-015): react-native-web only treats Space as a
+  // valid Pressable activation key for accessibilityRole="button"
+  // (src/features/ui/webKeyActivation.ts's top comment) — role="checkbox" gets Enter for free
+  // but silently drops Space without this fix.
+  it("toggles the consent checkboxes on a Space keydown, not just a press (FR-015)", () => {
+    const { getByTestId } = render(<ProfileForm onSubmit={jest.fn()} />);
+
+    // getByTestId resolves the rendered host node, on which native react-native's own Pressable
+    // (what this Jest environment actually resolves "react-native" to) has already merged the
+    // top-level `aria-checked` prop into `accessibilityState.checked` (see this file's own
+    // aria-checked test above) — read that, not a since-consumed `aria-checked` prop.
+    expect(getByTestId("profile-tos-checkbox").props.accessibilityState.checked).toBe(false);
+    fireEvent(getByTestId("profile-tos-checkbox"), "keyDown", { key: " " });
+    expect(getByTestId("profile-tos-checkbox").props.accessibilityState.checked).toBe(true);
+
+    expect(getByTestId("profile-privacy-checkbox").props.accessibilityState.checked).toBe(false);
+    fireEvent(getByTestId("profile-privacy-checkbox"), "keyDown", { key: " " });
+    expect(getByTestId("profile-privacy-checkbox").props.accessibilityState.checked).toBe(true);
+  });
 });

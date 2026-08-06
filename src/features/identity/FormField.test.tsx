@@ -73,6 +73,40 @@ describe("FormField (mobile/default)", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  // T004 (specs/010-registration-redesign, FR-006): labelCase="sentence" applies
+  // typography.label.fieldSentence (no textTransform/letterSpacing) instead of the default
+  // uppercase label.field treatment — and the default (no labelCase prop at all) still renders
+  // uppercase, the backward-compatibility guarantee every existing call site relies on.
+  it('renders label.fieldSentence with no textTransform when labelCase="sentence"', () => {
+    render(
+      <FormField label="Nombre completo" labelCase="sentence">
+        <Text>input</Text>
+      </FormField>,
+    );
+
+    const label = screen.getByText("Nombre completo");
+    const style = StyleSheet.flatten(label.props.style);
+
+    expect(style.textTransform).toBeUndefined();
+    expect(style.letterSpacing).toBeUndefined();
+    expect(style.fontSize).toBe(typography.label.fieldSentence.fontSize);
+    expect(style.fontWeight).toBe(typography.label.fieldSentence.fontWeight);
+    expect(style.color).toBe(typography.label.fieldSentence.color);
+  });
+
+  it("still renders uppercase label.field when labelCase is omitted (backward compatibility)", () => {
+    render(
+      <FormField label="Correo">
+        <Text>input</Text>
+      </FormField>,
+    );
+
+    const label = screen.getByText("Correo");
+    const style = StyleSheet.flatten(label.props.style);
+
+    expect(style.textTransform).toBe("uppercase");
+  });
 });
 
 describe("FormField.web", () => {
@@ -116,5 +150,22 @@ describe("FormField.web", () => {
     );
 
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  // T004 (specs/010-registration-redesign, FR-006): same labelCase="sentence" regression as the
+  // mobile/default variant above.
+  it('renders label.fieldSentence with no textTransform when labelCase="sentence"', () => {
+    render(
+      <WebFormField label="Nombre completo" labelCase="sentence">
+        <Text>input</Text>
+      </WebFormField>,
+    );
+
+    const label = screen.getByText("Nombre completo");
+    const style = StyleSheet.flatten(label.props.style);
+
+    expect(style.textTransform).toBeUndefined();
+    expect(style.fontSize).toBe(typography.label.fieldSentence.fontSize);
+    expect(style.color).toBe(typography.label.fieldSentence.color);
   });
 });

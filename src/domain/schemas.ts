@@ -158,6 +158,40 @@ export const businessProfileFormSchema = profileFormSchema.extend({
 });
 export type BusinessProfileFormInput = z.infer<typeof businessProfileFormSchema>;
 
+// 010-registration-redesign FR-002, FR-003, plan.md Research Decision 2: the two combined
+// per-tab schemas `CrearCuentaScreen`'s `UsuarioForm`/`TiendaForm` validate against — one Zod
+// shape per tab, covering every field shown together on that tab (registration fields + profile
+// fields), even though the real backend submission still splits the validated object back into
+// two separate calls (register, then profile — see plan.md Research Decision 1). Both reuse the
+// existing field-level rules verbatim via z.object#merge/#extend — no validation logic is
+// duplicated here, per docs/conventions.md's "reuse the schema for both validation and typing"
+// guidance.
+export const usuarioCrearCuentaSchema = personalRegistrationSchema.merge(profileFormSchema);
+export type UsuarioCrearCuentaInput = z.infer<typeof usuarioCrearCuentaSchema>;
+
+// 010-registration-redesign FR-003: the Tienda tab's own, narrower profile-step shape.
+// Deliberately NOT businessProfileFormSchema above — that schema still extends profileFormSchema
+// and would incorrectly require nombre/apellidoPaterno/birthDate/nationality/curp, none of which
+// the Tienda tab collects (spec.md FR-003, design brief §4). This is also the shape plan.md
+// Research Decision 8 records as what ProfileForm.tsx's business branch should switch to once
+// backend 015-registration-profile-support's User Story 2 relaxes profileBusinessSchema to match
+// — not implemented there yet, see that file's own follow-up comment.
+export const tiendaProfileFormSchema = z.object({
+  commercialName: z.string().min(1, "Commercial name is required"),
+  rfc: z.string().min(1, "RFC is required"),
+  fiscalAddress: z.string().min(1, "Fiscal address is required"),
+  tosAccepted: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the Terms of Service" }),
+  }),
+  privacyAccepted: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the Privacy Policy" }),
+  }),
+});
+export type TiendaProfileFormInput = z.infer<typeof tiendaProfileFormSchema>;
+
+export const tiendaCrearCuentaSchema = businessRegistrationSchema.merge(tiendaProfileFormSchema);
+export type TiendaCrearCuentaInput = z.infer<typeof tiendaCrearCuentaSchema>;
+
 // 005-login FR-001: POST-free — sign-in goes through the Supabase Auth SDK directly
 // (src/lib/supabase-client.ts's signInWithPassword, reused unchanged from
 // 001-registration-kyc), not a backend endpoint, so there is no backend contract to mirror
