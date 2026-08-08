@@ -16,6 +16,20 @@ test script" as a warning, not a failure — don't read that warning as permissi
 verification, read it as a signal that verification for that feature needs the tooling task
 done first.
 
+## CI
+
+`.github/workflows/ci.yml` (the `CI` workflow, job `verify`) now runs the full, unflagged
+`./init.sh` on every pull request targeting `main` and on every push to `main` — the same
+verification described in this file, run automatically rather than only on a developer's own
+machine. The two pre-existing `WARN`-graded issues (`expo-doctor`'s outdated-dependency
+findings; native dependency version drift) are expected to appear there too and do not fail the
+build, matching `init.sh`'s own WARN-is-not-FAIL grading exactly.
+
+CI existing is not the same as CI being *required*: enabling branch protection on `main` to
+require the `CI / verify` check before merge is a separate, human-only action
+(`specs/014-continuous-integration/tasks.md` T007) that is **not yet enabled** as of this
+writing. Don't read "CI exists" as "CI is required" until that task is confirmed done.
+
 ## Levels of verification
 
 ### Level 1 — Unit tests (mandatory once tooling exists)

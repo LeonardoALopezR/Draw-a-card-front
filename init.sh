@@ -6,7 +6,7 @@
 # export smoke checks for all three targets (web, iOS, Android).
 # Safe to re-run: each stage is idempotent.
 #
-# Usage: ./init.sh [--skip-doctor] [--skip-tests] [--skip-build] [--skip-native]
+# Usage: ./init.sh [--skip-doctor] [--skip-tests] [--skip-build] [--skip-native] [--skip-install]
 # Exit code: 0 if every stage passed (warnings allowed), 1 if any stage failed.
 #
 # On the native stages (added 2026-08-04, after a broken iOS app passed every gate while this
@@ -48,15 +48,19 @@ SKIP_DOCTOR=false
 SKIP_TESTS=false
 SKIP_BUILD=false
 SKIP_NATIVE=false
+SKIP_INSTALL=false
 for arg in "$@"; do
   case "$arg" in
     --skip-doctor) SKIP_DOCTOR=true ;;
     --skip-tests) SKIP_TESTS=true ;;
     --skip-build) SKIP_BUILD=true ;;
     --skip-native) SKIP_NATIVE=true ;;
+    --skip-install) SKIP_INSTALL=true ;;
     -h|--help)
-      echo "Usage: ./init.sh [--skip-doctor] [--skip-tests] [--skip-build] [--skip-native]"
-      echo "  --skip-native  skip the iOS/Android bundle exports (web export still runs)"
+      echo "Usage: ./init.sh [--skip-doctor] [--skip-tests] [--skip-build] [--skip-native] [--skip-install]"
+      echo "  --skip-native   skip the iOS/Android bundle exports (web export still runs)"
+      echo "  --skip-install  skip 'npm install' in stage 3 — for callers (e.g. CI) that already"
+      echo "                  installed dependencies themselves (e.g. via 'npm ci')"
       exit 0
       ;;
     *)
@@ -125,7 +129,9 @@ fi
 
 # ---------------------------------------------------------------------------
 log "3/8 Installing dependencies"
-if npm install >/tmp/init-sh-front-npm-install.log 2>&1; then
+if [ "$SKIP_INSTALL" = true ]; then
+  add_result "npm install" "OK" "skipped (--skip-install) — dependencies already installed by the caller"
+elif npm install >/tmp/init-sh-front-npm-install.log 2>&1; then
   add_result "npm install" "OK" "dependencies installed"
 else
   add_result "npm install" "FAIL" "see /tmp/init-sh-front-npm-install.log: $(tail -n 5 /tmp/init-sh-front-npm-install.log | tr '\n' ' ')"
