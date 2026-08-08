@@ -83,7 +83,7 @@ a fix and confirm it re-runs and passes.
   T004 (User Story 2), kept as its own reviewable task even though it lands in the same file, so
   each story's diff is individually traceable. *(FR-001, FR-003, FR-004, FR-005, FR-006, FR-008,
   FR-010, FR-011, FR-012, FR-013)*
-- [ ] T003 [US1] Push this feature's branch and open the pull request against `main` that
+- [X] T003 [US1] Push this feature's branch and open the pull request against `main` that
   introduces T002. Confirm in the PR's checks list: the `CI / verify` check appears and starts
   running; once complete, confirm it reports success, its log shows all 8 of `init.sh`'s stages
   (including all three `expo export --platform ...` bundle checks) having run, and the two
@@ -97,7 +97,7 @@ a fix and confirm it re-runs and passes.
   the stage it correctly identified, and the return to passing — in
   `progress/impl_014-continuous-integration.md`. *(FR-009, spec.md User Story 1's Independent
   Test and Acceptance Scenarios 1–5, SC-001, SC-002, SC-003, SC-004)*
-- [ ] T004 [US1] While the PR from T003 is open, confirm no GitHub Actions secret exists for the
+- [X] T004 [US1] While the PR from T003 is open, confirm no GitHub Actions secret exists for the
   repository (Settings → Secrets and variables → Actions) and that the workflow run's log
   contains no reference to `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`/
   `EXPO_PUBLIC_API_URL` having been set from a secret — only `init.sh`'s own
@@ -123,7 +123,7 @@ the same workflow runs against that commit, visible in the Actions tab and as a 
 - [X] T005 [US2] Extend `.github/workflows/ci.yml` (from T002) to add `on.push.branches:
   [main]`, triggering the exact same `verify` job already defined — no new job, no duplicated or
   diverging steps. *(FR-002, FR-007)*
-- [ ] T006 [US2] After this feature's PR (T003) merges to `main`, confirm in the repository's
+- [X] T006 [US2] After this feature's PR (T003) merges to `main`, confirm in the repository's
   Actions tab that the `push`-triggered run of `CI / verify` fired against the resulting `main`
   commit and completed (pass or fail, whichever is true of that commit) — record the observed
   run URL/result in `progress/impl_014-continuous-integration.md`. This task can only be
@@ -156,6 +156,20 @@ while the check is failing or still running.
   this file until a human confirms it has been applied — do not mark it `[X]` on the human's
   behalf, and do not let this feature's other tasks being complete be mistaken for this one also
   being done. *(FR-014, spec.md User Story 3 and Assumptions)*
+
+**T003/T004/T006 OUTCOMES (2026-08-07/08, real evidence):** T003 — the check appeared and ran on
+PR #9; a real pass and a real, correctly-attributed FAIL were both observed, and the fail was a
+GENUINE pre-existing defect (`LoginScreen.test.tsx` exceeding jest's 5000ms timeout) rather than a
+synthetic broken commit, so no deliberate breakage was needed. A green run followed on PR #10 and
+then on `main` itself (run 31235303720, `RESULT: SUCCESS (10/10)`). T004 — zero GitHub Actions
+secrets and zero variables exist for the repository (`gh secret list` and `gh variable list` both
+empty), confirming FR-008/SC-006. T006 — the `push` trigger fired automatically against `main` after
+#9 merged (run 31231468258) and again after #10 (run 31235303720), proving FR-002/FR-007.
+
+**T007 REMAINS THE ONLY OPEN ITEM AND IS DELIBERATELY UNCHECKED.** It is a repo setting no agent can
+apply. `main` is green now, so enabling it is finally safe — before #10 merged it would have blocked
+every merge. `docs/verification.md` states that CI existing is not CI being required until this is
+done, so the docs do not overclaim in the meantime.
 
 **Checkpoint**: Once T007 is applied (by a human, out of band), `main` is genuinely protected by
 this feature's check — not merely checked.
