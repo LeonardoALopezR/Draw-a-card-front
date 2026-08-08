@@ -39,6 +39,7 @@
 | `src/lib/` | Expo-specific adapter layer (Supabase client, configured API instance) | For platform wiring |
 | `src/features/` | UI screens/components by domain, mirroring the backend's modules | For UI implementation |
 | `init.sh` | One-shot local env setup: install, type-check, expo-doctor, native dependency alignment, tests, and bundle export checks for **all three** targets (web, iOS, Android) | To verify your environment or before declaring a task done |
+| `.github/workflows/ci.yml` | The `CI` workflow: runs the full `./init.sh` on every pull request targeting `main` and on every push to `main` | Before changing what "verified" means, or before changing `init.sh`'s flags |
 
 No separate `docs/architecture.md` or `docs/specs.md` — the constitution already covers
 architecture/tech stack, and the `speckit-*` skills already are the process definition.
