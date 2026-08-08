@@ -204,10 +204,24 @@ fi
 
 # ---------------------------------------------------------------------------
 log "7/8 Running test suite"
+# In CI (GitHub Actions sets CI=true automatically for every workflow step — no workflow-file
+# edit needed), jest's default worker pool oversubscribes the runner's 2-4 vCPUs badly enough
+# that cross-test/cross-suite CPU contention alone pushes an otherwise-fast test past jest's
+# 5000ms per-test timeout (measured: the same test 69ms at --maxWorkers=1 vs 308ms at jest's
+# local default of 13 workers on a 14-core dev machine — see specs/015-ci-test-timeout/spec.md's
+# Round 2 Amendment). --runInBand (a single worker, zero contention by construction) eliminates
+# that root cause. Scoped to CI only — jest.config.js intentionally does NOT set this, so a
+# developer's local run stays fully parallel and unaffected (specs/015-ci-test-timeout FR-009).
 if [ "$SKIP_TESTS" = true ]; then
   add_result "Tests" "WARN" "skipped (--skip-tests)"
 elif ! node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)' 2>/dev/null; then
   add_result "Tests" "WARN" "no \"test\" script in package.json yet — set up a test runner (e.g. jest + @testing-library/react-native) when the first feature needs one, per docs/verification.md"
+elif [ "${CI:-}" = "true" ]; then
+  if npm test -- --runInBand >/tmp/init-sh-front-tests.log 2>&1; then
+    add_result "Tests" "OK" "all tests passed (--runInBand, CI=true)"
+  else
+    add_result "Tests" "FAIL" "see /tmp/init-sh-front-tests.log: $(tail -n 8 /tmp/init-sh-front-tests.log | tr '\n' ' ')"
+  fi
 elif npm test >/tmp/init-sh-front-tests.log 2>&1; then
   add_result "Tests" "OK" "all tests passed"
 else

@@ -2,10 +2,21 @@
 
 **Input**: Design documents from `specs/015-ci-test-timeout/` (`spec.md`, `plan.md`)
 
-**Tests**: This feature's "tests" are the existing 630 jest tests, unmodified — it adds no new
-application code to unit-test in the usual sense. Its equivalent of a Level 3 manual smoke check
-(`docs/verification.md`) is watching a real `ubuntu-latest` CI run, per plan.md's "CI evidence
-mechanism" — captured explicitly below, not assumed or skipped.
+**Tests**: This feature's "tests" are the existing 630 (see T001) jest tests, unmodified — it adds
+no new application code to unit-test in the usual sense. Its equivalent of a Level 3 manual smoke
+check (`docs/verification.md`) is watching a real `ubuntu-latest` CI run **on this feature's own
+PR #10** (the throwaway-branch mechanism plan.md originally specified is superseded — see the
+Round 2 Amendment below and in spec.md/plan.md) — captured explicitly below, not assumed or
+skipped.
+
+**⚠️ ROUND 2 AMENDMENT (2026-08-07)**: T002–T005 shipped exactly as planned and were confirmed,
+on PR #10's real CI run, to NOT fix the timeout (kept anyway — genuine, independent win). Two
+further remedies (module warming; a canary test) were evaluated and eliminated by measurement.
+The actual root cause is jest worker-pool oversubscription; the human-settled fix is
+`--runInBand` in CI only, via `init.sh` (see plan.md's "Bounding jest's worker concurrency in CI"
+Research Decision). New tasks T014–T018 carry this out; T006–T010 below are annotated with their
+actual (superseded or completed-with-a-different-outcome) status rather than rewritten out of
+existence, so the history stays legible. **Jump to T014 if you only need what's left to do.**
 
 **Organization**: Tasks are grouped by user story from `spec.md`, in priority order (P1 → P2).
 User Story 1 (the fix, empirically proven on real CI) is the MVP and the entire reason this
@@ -116,44 +127,101 @@ go-back-to-the-human escape hatch, and FR-007's `CrearCuentaScreen` check.
   file). Then run the full suite (`npx jest` or `./init.sh`) and confirm the total pass count
   matches T001's recorded baseline exactly — zero new failures, zero assertions weakened. *(FR-002,
   FR-003, spec.md Acceptance Scenario 4, SC-002)*
-- [ ] T006 [US1] **Requires explicit human authorization before pushing/opening anything** (this
-  feature's own instruction: no push/PR/merge without authorization at the time). Per plan.md's
-  "CI evidence mechanism" Research Decision: create a new, disposable branch from
-  `015-ci-test-timeout`'s current tip (e.g. `015-ci-evidence-throwaway`), cherry-pick `014`'s two
-  workflow commits (`e309d45`, `7b69138`) onto it, push it, and open a pull request against `main`
-  from that throwaway branch — its **sole purpose** is to obtain one real `CI / verify` run; it is
-  never intended to be merged. *(plan.md's CI evidence mechanism Research Decision, FR-005)*
-- [ ] T007 [US1] Watch the throwaway PR's `CI / verify` check run to completion. From its logs,
-  record in `progress/impl_015-ci-test-timeout.md`: (a) the full pass/fail summary (expect it to
-  match T001/T005's baseline count, all passing); (b) `LoginScreen.test.tsx`'s first test's exact
-  measured duration; (c) confirmation that the two pre-existing `WARN`-graded issues
-  (expo-doctor, native dependency alignment) still don't fail the build, unrelated to this
-  feature but worth confirming nothing regressed. *(FR-005, SC-001, SC-002)*
-- [ ] T008 [US1] Evaluate T007's measured `LoginScreen.test.tsx` duration against SC-001 (must be
-  under 3000ms for a comfortable margin below the 5000ms default). If it passes: proceed to T010.
-  If it does NOT pass (at or above 3000ms, or still exceeding 5000ms outright): STOP here. Do
-  **not** add a `testTimeout` override anywhere. Set `feature_list.json`'s `015-ci-test-timeout`
-  status to `blocked`, write the measured numbers and the remaining options (spec.md
-  Clarifications' second bullet: reduce first-render cost further, split the heavy suite so a
-  cheap canary absorbs the one-time cost, or — only with explicit human sign-off — a scoped
-  `testTimeout` for that one file) to `progress/current.md`, close the throwaway PR unmerged, and
-  end this session for human review. *(FR-006, SC-001 — this is the escalation path spec.md's
-  Clarifications section requires, not optional)*
-- [ ] T009 [US1] [P] While T007's throwaway PR is still open (or from the same run's logs),
-  independently confirm `CrearCuentaScreen.test.tsx`'s first test duration from the same real run
-  (spec.md FR-007 — the kickoff brief's named most-likely-next-victim). Record it in
-  `progress/impl_015-ci-test-timeout.md` alongside T007's numbers. Evaluate against SC-004 (under
-  3000ms) the same way T008 evaluates SC-001 — if it fails, this is additional evidence for T008's
-  escalation path, not a separate blocker to resolve independently. *(FR-007, SC-004)*
-- [ ] T010 [US1] Once T008 (and T009) pass: close the throwaway PR from T006 **without merging
-  it**, and delete its disposable branch (`015-ci-evidence-throwaway`) both locally and on the
-  remote. Confirm `015-ci-test-timeout`'s own branch/diff was never touched by the throwaway
-  branch's existence (`git log 015-ci-test-timeout` shows only this feature's own commits — no
-  `014` commits). *(plan.md's CI evidence mechanism Research Decision — "close unmerged" step)*
+- [X] T006 [US1] **DONE, DIFFERENTLY THAN WRITTEN — no throwaway branch was needed (see Plan
+  Amendment above).** ~~Requires explicit human authorization before pushing/opening
+  anything...create a new, disposable branch...cherry-pick `014`'s two workflow commits...~~
+  **Actual**: since `main` already carried `.github/workflows/ci.yml` (`014` merged first),
+  `015-ci-test-timeout` was pushed directly and its own pull request opened against `main` — **PR
+  #10** — with explicit human authorization. No throwaway branch/PR was created or needed.
+  *(plan.md's CI evidence mechanism Research Decision, now superseded; FR-005)*
+- [X] T007 [US1] **DONE. Real result: FAILED — record this plainly, it's the entire reason Round 2
+  exists.** Watched PR #10's `CI / verify` check run to completion (**run 31232122050**). Recorded
+  in `progress/impl_015-ci-test-timeout.md`: (a) full pass/fail summary — 1 failed, 629 passed
+  (same failure as before this feature); (b) `LoginScreen.test.tsx`'s first test: still
+  `Exceeded timeout of 5000 ms`, i.e. still **>5000ms**, effectively unchanged from before this
+  feature's fix (suite total 11.06s → 10.58s); (c) the two pre-existing `WARN`-graded issues did
+  not fail the build (unaffected, as expected). *(FR-005, SC-001, SC-002)*
+- [X] T008 [US1] **DONE. Outcome: the "does NOT pass" branch — this is FR-006 working exactly as
+  designed, not a task failure.** Evaluated T007's measured duration against SC-001 (under
+  3000ms): **it does not pass** — the fix did not even reduce the failure below jest's 5000ms
+  hard limit, let alone reach a 3000ms margin. Per FR-006: did **not** add a `testTimeout`
+  override. `feature_list.json`'s `015-ci-test-timeout` status was set to `blocked`. Two further
+  candidate remedies were then evaluated and eliminated by measurement (module warming; a canary
+  test — see spec.md/plan.md's Round 2 Amendment for the numbers) before escalating the next
+  decision to the human, who settled on `--runInBand` (FR-009/FR-010, carried out in T014–T018
+  below). *(FR-006, SC-001)*
+- [ ] T009 [US1] **SUPERSEDED — folded into T017 below, not performed against the (already-known-
+  insufficient) T007 run.** Originally: confirm `CrearCuentaScreen.test.tsx`'s first test duration
+  from the same real run as T007. Since T007's run already failed SC-001 before this check would
+  have added new information toward a *shipped* fix, this measurement is deferred to the
+  `--runInBand` run (T017), which is the one whose numbers actually matter for this feature's
+  done-criteria. Left unchecked and not performed for T007's run specifically. *(FR-007, SC-004 —
+  now served by T017)*
+- [ ] T010 [US1] **OBSOLETE — no throwaway PR/branch was ever created (see T006), so there is
+  nothing to close or delete.** Left unchecked deliberately (not marked done, since its own action
+  never applies) rather than silently removed, so a future reader sees explicitly that this task
+  was superseded, not forgotten. *(plan.md's CI evidence mechanism Research Decision — superseded)*
 
-**Checkpoint**: The fix is implemented, locally verified as behavior-preserving, and empirically
-proven on a real 2-core `ubuntu-latest` runner with a recorded, comfortable safety margin — or the
-feature is honestly `blocked` pending human input, per T008.
+**Checkpoint**: T002–T008 establish, with real evidence, that the `expo-font`/`act()` fix alone is
+insufficient and that `feature_list.json` correctly reflects `blocked` — this is a legitimate,
+honest intermediate state per FR-006, not a dead end. T014–T018 below carry out the human-settled
+next remedy.
+
+---
+
+## Phase 3b: Round 2 — Bound jest's worker concurrency in CI (still User Story 1, still P1)
+
+**Goal**: Apply the empirically confirmed fix (`--runInBand` in CI only, via `init.sh`) and prove
+it — not just the `act()` fix — brings `LoginScreen.test.tsx`'s (and `CrearCuentaScreen.test.tsx`'s)
+first test under a comfortable margin on a real `ubuntu-latest` run, without affecting local
+development.
+
+**Independent Test**: Per plan.md's "Bounding jest's worker concurrency in CI" Research Decision —
+push the `init.sh` change to PR #10, observe its real `CI / verify` run, and read the measured
+durations directly from that run's logs.
+
+- [X] T014 [US1] Implement the `CI`-conditional in `init.sh` stage 7 (plan.md's "Bounding jest's
+  worker concurrency in CI" Research Decision, FR-009/FR-010): when `[ "$CI" = "true" ]`, run
+  `npm test -- --runInBand` instead of the existing unflagged `npm test`; the `SKIP_TESTS` branch,
+  the no-`test`-script branch, the log file path, and every `add_result` call stay exactly as they
+  are today. Do not touch `jest.config.js` or `package.json`'s `scripts` for this — the
+  conditional lives in `init.sh` only. *(FR-009, FR-010)*
+- [X] T015 [US1] Verify locally, twice: (a) run `./init.sh` (or `npm test`) with no `CI` env var
+  set and confirm stage 7 behaves exactly as before this change (unbounded parallelism, same
+  wall-clock ballpark as today) — this is the local-invisibility requirement (FR-009); (b) run
+  `CI=true npm test -- --listTests` or equivalent to confirm the conditional actually activates
+  and forwards `--runInBand` to jest when `CI=true` (re-confirming the flag-forwarding behavior
+  already verified: `npm test -- --maxWorkers=2 --listTests` correctly passes flags through), then
+  run `CI=true npm test` (or `CI=true ./init.sh --skip-install --skip-build`) and confirm all
+  tests still pass. Confirm `git diff -- src/features/identity/LoginScreen.test.tsx` remains empty
+  (FR-002 — this remedy touches no test file, same as T005 already confirmed for the first one).
+  *(FR-002, FR-003, FR-009)*
+- [ ] T016 [US1] **Requires explicit, real-time human authorization to push** (already granted
+  specifically for pushing to PR #10's branch per the coordinator's Round 2 instruction — if
+  resuming this task in a different/later session, re-confirm that authorization still stands
+  before pushing). Commit the `init.sh` change and push it to `015-ci-test-timeout` (**PR #10's
+  existing branch — do not open a new PR**, per the Plan Amendment above: this feature's own PR
+  already has a working `CI / verify` check). Watch that check run to completion on the real
+  `ubuntu-latest` runner. *(FR-005)*
+- [ ] T017 [US1] From T016's real run logs, record in `progress/impl_015-ci-test-timeout.md`: (a)
+  the full pass/fail summary; (b) `LoginScreen.test.tsx`'s first test's exact measured duration;
+  (c) `CrearCuentaScreen.test.tsx`'s first test's exact measured duration (spec.md FR-007 — the
+  check T009 deferred to here); (d) the total job duration, for SC-006. *(FR-005, FR-007, SC-001,
+  SC-002, SC-004, SC-006)*
+- [ ] T018 [US1] Evaluate T017's measured durations: SC-001 (`LoginScreen.test.tsx` under 3000ms),
+  SC-004 (`CrearCuentaScreen.test.tsx` under 3000ms), and SC-006 (total job duration comfortably
+  within the 20-minute timeout). **If ALL pass with clear margin**: this feature's fix is
+  confirmed — flip `feature_list.json`'s `015-ci-test-timeout` status from `blocked` back to a
+  normal in-progress/near-done state and proceed to Phase 5 (Polish). **If ANY fails its margin**:
+  this is FR-006 firing again, exactly as designed — do **not** add a `testTimeout` override
+  anywhere; keep `feature_list.json`'s status `blocked`; record the measured numbers and remaining
+  options (see spec.md's Clarifications, second bullet, as updated in Round 2) in
+  `progress/current.md`; stop for the human. *(FR-006, SC-001, SC-004, SC-006 — the load-bearing
+  task of this feature's second remedy, same role T008 played for the first one)*
+
+**Checkpoint**: Either this feature is genuinely, empirically done — proven on real CI, not
+assumed from local numbers that already once looked promising and weren't enough — or it is
+honestly `blocked` a second time with fresh numbers for the human, per T018.
 
 ---
 
@@ -195,12 +263,18 @@ updating `AGENTS.md`/`docs/` alongside the feature that changes what they descri
   `@expo/vector-icons`' async font-loading `setState` from firing during tests — link this
   feature's spec for the full rationale. Do not rewrite the existing Levels 1–5 definitions
   themselves; this is a short addition, same treatment `014-continuous-integration`'s T009 gave
-  the CI section. *(repo hygiene, no specific FR)*
-- [ ] T013 [P] If T008/T009 both pass (this feature is not `blocked`): update this feature's own
-  `feature_list.json` entry — status `spec_ready` → (after human approval and the branch is cut)
-  `in_progress` → `done`, per the normal SDD workflow — with a summary of the measured CI evidence
-  (SC-001/SC-004's actual numbers) so a future reader does not have to re-derive it from
-  `progress/impl_015-ci-test-timeout.md`. *(repo hygiene)*
+  the CI section. **Also add (Round 2)**: a short note that CI runs jest with `--runInBand` (via
+  `init.sh` stage 7's `CI`-conditional) specifically to avoid worker-contention-induced timeouts —
+  local runs are unaffected. *(repo hygiene, no specific FR)*
+- [ ] T013 [P] **UPDATED (Round 2) — gated on T018, not T008/T009.** If T018 passes (this feature
+  is not `blocked`): update this feature's own `feature_list.json` entry — status `blocked` →
+  (once confirmed genuinely fixed) `in_progress` → `done`, per the normal SDD workflow — with a
+  summary of the measured CI evidence from BOTH rounds (the `act()` fix's real-CI insufficiency,
+  T007/T008; the `--runInBand` fix's real-CI sufficiency, T017/T018's SC-001/SC-004/SC-006 actual
+  numbers) so a future reader does not have to re-derive either from
+  `progress/impl_015-ci-test-timeout.md`. If T018 instead lands on the "fails its margin" branch,
+  do not perform this task — the feature stays `blocked` and this task waits for whatever the
+  human decides next. *(repo hygiene)*
 
 ---
 
@@ -210,21 +284,26 @@ updating `AGENTS.md`/`docs/` alongside the feature that changes what they descri
 
 - **Setup (Phase 1)**: Skipped — no dependency.
 - **Foundational (Phase 2)**: No dependency on Setup (skipped) — BLOCKS everything else (T001's
-  recorded baseline is referenced by T004, T005, T007, T009).
+  recorded baseline is referenced by T004, T005, T007).
 - **User Story 1 (Phase 3)**: Depends on Phase 2 (T001). T002 → T003 → T004/T005 (fix must exist
-  and be wired before it can be verified locally) → T006 → T007 → T008/T009 (evaluation depends
-  on T007's real measurements) → T010 (cleanup depends on T008/T009 having passed).
+  and be wired before it can be verified locally) → T006 (DONE) → T007 (DONE, result: FAIL) →
+  T008 (DONE, result: escalate — `blocked`). T009/T010 superseded, not performed as originally
+  written.
+- **Phase 3b (Round 2, still US1)**: Depends on Phase 3 having reached T008's escalation (it has).
+  T014 → T015 (verify locally before pushing) → T016 (push + real CI run — requires human
+  authorization) → T017 (record real measurements) → T018 (evaluate — this feature's actual
+  done-criteria).
 - **User Story 2 (Phase 4)**: Depends on T004 (the same local check T011 spot-checks
-  individually) — can run any time after T004, does not depend on T006–T010's CI-evidence steps.
-- **Polish (Phase 5)**: T012 can happen any time after T003. T013 depends on Phase 3's outcome
-  (T008/T009) being a genuine pass, not `blocked`.
+  individually) — can run any time after T004, does not depend on Phase 3b's CI-evidence steps.
+- **Polish (Phase 5)**: T012 can happen any time after T003 (its Round 2 addendum can happen any
+  time after T014). T013 depends on Phase 3b's outcome (T018) being a genuine pass, not `blocked`.
 
 ### Parallel Opportunities
 
-- T009 (Phase 3) and T011 (Phase 4) can both happen once T007's real CI run and T004's local
-  check exist, respectively — different concerns, different files, no shared dependency between
-  them.
-- T012 and T013 (Phase 5, different files) can run in parallel with each other.
+- T011 (Phase 4) can happen any time after T004 — independent of Phase 3b entirely.
+- T012 and T013 (Phase 5, different files) are NOT fully parallel this round: T012's base content
+  can be written any time after T003, but its Round 2 addendum and T013 both depend on T014/T018
+  respectively — sequence T012's addendum and T013 after T018, not before.
 
 ---
 
@@ -233,18 +312,24 @@ updating `AGENTS.md`/`docs/` alongside the feature that changes what they descri
 ### MVP First (User Story 1 Only)
 
 1. Complete Phase 2 (T001 — recorded baseline).
-2. Complete Phase 3 (T002–T010 — the fix, local verification, real CI evidence, and either a
-   confirmed pass or an honest `blocked` status).
-3. **STOP and VALIDATE**: At this point, either this feature is genuinely done (real CI evidence
-   confirms the fix), or it is `blocked` with the measured numbers and remaining options recorded
-   for the human — both are valid, honest outcomes of this phase; a `blocked` result is not a
-   failure of this task list, it is FR-006 working as designed.
+2. Complete Phase 3 (T002–T010 — the `expo-font`/`act()` fix, local verification, and real CI
+   evidence). **This already happened and the outcome was `blocked`** — a legitimate, honest
+   result per FR-006, not a failure of the task list.
+3. Complete Phase 3b (T014–T018 — the `--runInBand` fix, local verification, and real CI
+   evidence).
+4. **STOP and VALIDATE**: At this point, either this feature is genuinely done (T018's real CI
+   evidence confirms the fix), or it is `blocked` a second time with fresh measured numbers and
+   remaining options recorded for the human — both are valid, honest outcomes; a `blocked` result
+   is not a failure of this task list, it is FR-006 working as designed, twice now if it happens
+   again.
 
 ### Incremental Delivery
 
-1. Phase 2 → Phase 3 (MVP: the fix, empirically proven or honestly blocked).
-2. Phase 4 (US2's explicit multi-suite confirmation) alongside or right after Phase 3's T004.
-3. Phase 5 (docs/status bookkeeping) once Phase 3's outcome is known either way.
+1. Phase 2 → Phase 3 (the `act()` fix, empirically proven insufficient — DONE).
+2. Phase 3b (the `--runInBand` fix, empirically proven or honestly blocked again).
+3. Phase 4 (US2's explicit multi-suite confirmation) alongside or right after Phase 3's T004 —
+   independent of Phase 3b, can happen any time.
+4. Phase 5 (docs/status bookkeeping) once Phase 3b's outcome is known either way.
 
 ---
 
@@ -252,12 +337,22 @@ updating `AGENTS.md`/`docs/` alongside the feature that changes what they descri
 
 - [P] tasks = different files, no dependency on an incomplete task.
 - [Story] label maps task to specific user story for traceability back to spec.md.
-- T006 is the one task in this file that requires explicit, real-time human authorization before
-  it can be executed (pushing a branch, opening a PR) — do not treat this plan's recommendation
-  of Option (c) as standing permission to do so autonomously.
-- T008 is this feature's most important task: it is the point where "does the fix actually work
-  on real CI" gets a real, evidence-based answer, and where this feature is explicitly required
-  to stop rather than quietly reach for `testTimeout` if the answer is no.
+- T006 and T016 are the two tasks in this file that require explicit, real-time human
+  authorization before they can be executed (pushing a branch/commit, and — for T006 only, as
+  originally written — opening a PR; T016 pushes to the already-open PR #10, per the Plan
+  Amendment). Do not treat either plan.md Research Decision's existence as standing permission to
+  push/open/merge anything autonomously — that authorization is real-time, per this repo's
+  standing rule, and for T016 specifically it has already been given once (per the coordinator's
+  Round 2 instruction) but should be re-confirmed if resumed in a different session.
+- T008 and T018 are this feature's two most important tasks: each is the point where "does this
+  particular remedy actually work on real CI" gets a real, evidence-based answer, and where this
+  feature is explicitly required to stop rather than quietly reach for `testTimeout` if the answer
+  is no. T008 already fired once (result: no) — T018 is where that happens for the second, human-
+  settled remedy.
+- T009/T010 are intentionally left unchecked and annotated **SUPERSEDED**/**OBSOLETE** rather than
+  deleted or silently marked done — this repo's convention (see `014-continuous-integration`'s own
+  amendment history) is to keep a reasoning trail visible, not to rewrite tasks.md as if the
+  original plan had never existed.
 - Every task above states which `spec.md` FR(s)/Acceptance Scenario(s)/SC(s) it serves, per this
   repo's traceability convention (`docs/verification.md` Level 5, adapted here since this
   feature's "tests" are the existing suite plus real CI evidence, not new unit tests of its own).

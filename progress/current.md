@@ -2,8 +2,9 @@
 
 **Started**: 2026-08-07
 **Feature**: 014-continuous-integration
-**State**: 014 `blocked` on the newly-registered 015-ci-test-timeout. PR #9 is open; the CI check
-works and correctly reports FAILURE on a real pre-existing test bug.
+**State**: 014 MERGED (PR #9, commit `0589e03`) but still `blocked` on a green run. 015 `blocked`
+per FR-006 — its fix is pushed (PR #10) and is a real win, but CI proved it does not clear the
+timeout, and the two candidate remedies have now been empirically eliminated. Needs a human decision.
 
 ## What happened this session
 
@@ -181,25 +182,47 @@ works and correctly reports FAILURE on a real pre-existing test bug.
 
 ## Next step
 
-**014 is blocked on 015, not finished and not failed.** The workflow itself is built, reviewed, and
-proven working on real runners; only its own PR going green is outstanding, and that depends on 015.
+**Blocked on a human decision (FR-006). Do not pick a remedy without it.**
 
-The unblock sequence, in order:
+Both PRs are pushed. [PR #9](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/9) merged
+(014's workflow is on `main`); [PR #10](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/10)
+is open with 015's `jest.setup.ts` fix, its check red.
 
-1. **015-ci-test-timeout** — spec it (it's `pending`, so it needs the `spec-writer` → human-approval
-   gate first), fix the `LoginScreen` timeout, merge its own PR. Note at plan time: 015's branch cut
-   from `main` will NOT contain `.github/workflows/ci.yml` unless 014 has merged first, so decide
-   deliberately how 015's own PR gets a CI check — a green local run proves nothing here, since the
-   bug is already green locally.
-2. Update the `014-continuous-integration` branch, confirm the `CI / verify` check on
-   [PR #9](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/9) goes **green** → finishes T003.
-3. **T004** — confirm zero Actions secrets exist in repo Settings (already strongly evidenced: the
-   run needs none).
-4. Merge #9 → then **T006** (confirm the `push`-triggered run fires against the new `main` commit).
-5. **T007** — HUMAN-ONLY: Settings → Branches → require status checks → select `CI / verify`.
-   **Do not enable this until #9's check is green**, or it will block every merge.
+What was measured, so nobody re-derives it:
 
-Uncommitted and deliberately left alone: `jest.config.js` (the sibling session's worktree fix).
+| | before | after act() fix | + module warming |
+|---|---|---|---|
+| act warnings (local) | 44 | **0** | 0 |
+| total test time (local) | 11208ms | **9363ms (-16%)** | 20173ms (+115%) ✗ |
+| the failing test (local) | 311ms | 308ms (-1%) | 432ms ✗ |
+| the failing test (CI) | >5000ms ✗ | **>5000ms ✗** | not run |
 
-Also still parked: **012-home-visual-alignment** remains `spec_ready` at its own approval gate,
-untouched by this session — though its spec docs are now on the 014 branch via `4e2ee8c`.
+**Two remedies are eliminated by measurement, not opinion:**
+
+1. *Module warming in a setup file* — from `setupFiles` it cannot even load
+   (`ReferenceError: expect is not defined`); from `setupFilesAfterEnv` it runs but more than
+   doubles total test time and makes the target test slower, because setup runs once per test FILE.
+2. *A cheap canary test* — almost certainly dead too: the ~240ms is **first-`render()` lazy
+   initialization**, not import cost (top-level imports evaluate at module load, outside any test's
+   clock). A canary can only absorb it by rendering, which makes the canary the thing that times out.
+
+**Remaining options, for the human:**
+
+- **(a) A scoped `testTimeout`** — for `LoginScreen.test.tsx` alone, or globally. `spec.md` allows
+  this only with explicit sign-off. That sign-off is far better justified now than when it was first
+  declined, because the alternatives were tried and failed rather than merely disliked. Sizing: the
+  test is ~5-6s in CI (suite 10.58s, its other ten tests ~360ms each), so 15000ms carries wide margin.
+- **(b) Genuinely reduce first-render cost** — open-ended, unproven, and risks touching app code,
+  which FR-003 forbids.
+- **(c) Accept red for now** — viable only while branch protection stays off; leaves `main` red and
+  014 blocked indefinitely.
+
+**Keep the `act()` fix either way** — 44 warnings to 0 and -16% local test time, zero test files
+modified, no assertion weakened. It is correct and valuable independently of the timeout.
+
+Then, to close 014: T003's green run (satisfied once `main` goes green), T004 (confirm zero Actions
+secrets), T007 (HUMAN-ONLY branch protection — **do not enable until `main` is green**). 014's
+tasks.md T006 box is deliberately still unchecked to avoid a cross-feature edit, though T006 itself
+is satisfied by run 31231468258.
+
+Also still parked: **012-home-visual-alignment**, `spec_ready` at its own approval gate.

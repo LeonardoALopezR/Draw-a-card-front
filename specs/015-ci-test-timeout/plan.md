@@ -10,20 +10,51 @@ Phase 1 (data model / contracts / quickstart) into this single file rather than 
 persisted entity (spec.md's Key Entities is explicitly N/A) and its "interface contract" is a
 jest configuration/setup-file shape, short enough to document inline below.
 
+## Round 2 Amendment (2026-08-07) — read this before anything below
+
+This plan's original Summary/Research Decisions (preserved below, marked where superseded) were
+written before real CI evidence existed. Since then: T002–T005 (the `jest.setup.ts`/`expo-font`
+mock) were implemented exactly as this plan specified, pushed as this feature's own PR (**PR
+#10**), and its real `CI / verify` run (**31232122050**) still **failed** with the same
+`LoginScreen.test.tsx` timeout. Two further candidate remedies (module/module-graph warming in a
+setup file; a cheap canary test) were then evaluated and **eliminated by measurement** — see
+spec.md's Round 2 Amendment for the full numbers, not repeated here. The actual, empirically
+confirmed root cause is **CPU contention from jest's default worker-pool oversubscription**, not
+the `act()` path. The human has settled the fix: **run jest with `--runInBand` in CI only**, via a
+`CI`-conditional in `init.sh` stage 7 (spec.md FR-009/FR-010). Separately, the human merged
+`014-continuous-integration`'s PR #9 to `main` **before** this feature (reversing this plan's
+original "CI evidence mechanism" Research Decision, which is now superseded — see that section
+below) — so `main`, and this feature's own branch/PR #10, already carry
+`.github/workflows/ci.yml`; no throwaway branch/PR is needed. Every section below is updated to
+match; superseded content is struck through and kept, not deleted, so the reasoning trail survives.
+
 ## Summary
 
-Add a jest setup file (`jest.setup.ts`, wired via `jest.config.js`'s `setupFiles`) that neutralizes
-`@expo/vector-icons`' unmocked async font-loading `setState` (the confirmed source of the
-"Icon inside a test was not wrapped in act(...)" warnings) repo-wide, with **zero** application
-code or assertion changes. Then — this is the load-bearing part of this plan, not an
-afterthought — obtain a real, empirical measurement of `LoginScreen.test.tsx`'s first test on an
-actual `ubuntu-latest`, 2-core GitHub Actions runner, because a green local run proves nothing
-here (the bug is already 630/630 green locally today). Since `.github/workflows/ci.yml` exists
-only on the unmerged `014-continuous-integration` branch, this plan resolves how this feature's
-own PR — which must merge to `main` *before* `014`'s PR #9 (FR-008) — gets that real measurement
-without collapsing the two features' merges together. If the measurement shows the fix is
-sufficient (SC-001/SC-004's margins), this feature is done. If not, FR-006 requires stopping and
-escalating to the human rather than adding `testTimeout`.
+**UPDATED 2026-08-07 (Round 2).** Two things ship, in sequence:
+
+1. A jest setup file (`jest.setup.ts`, wired via `jest.config.js`'s `setupFiles`) that neutralizes
+   `@expo/vector-icons`' unmocked async font-loading `setState` (the confirmed source of the "Icon
+   inside a test was not wrapped in act(...)" warnings) repo-wide, with **zero** application code
+   or assertion changes. **Implemented, real, and kept — but confirmed by real CI evidence (PR
+   #10, run 31232122050) to NOT by itself fix the timeout this feature exists to close.**
+2. A `CI`-conditional in `init.sh` stage 7 that runs jest with `--runInBand` when the standard
+   `CI` environment variable is `"true"` (GitHub Actions sets this automatically; no workflow-file
+   edit needed) — eliminating the actual, empirically confirmed root cause, cross-test/cross-suite
+   CPU contention from jest's default worker-pool oversubscription, while leaving a developer's
+   local run fully parallel and unaffected (spec.md FR-009/FR-010).
+
+Obtaining a real, empirical measurement of `LoginScreen.test.tsx`'s first test on an actual
+`ubuntu-latest` GitHub Actions runner remains the load-bearing part of this plan — a green local
+run proves nothing here (the bug is already 630/630 green locally today, and the first remedy
+attempted looked good locally too and still failed for real). ~~Since `.github/workflows/ci.yml`
+exists only on the unmerged `014-continuous-integration` branch, this plan resolves how this
+feature's own PR — which must merge to `main` *before* `014`'s PR #9 (FR-008) — gets that real
+measurement without collapsing the two features' merges together.~~ **Superseded**: `014` merged
+first (human decision), so this feature's own PR (#10) already has a real check — see "CI
+evidence mechanism" below. If the `--runInBand` measurement shows the fix is sufficient
+(SC-001/SC-004/SC-006's margins), this feature is done. If not, FR-006 requires stopping and
+escalating to the human rather than adding `testTimeout` — exactly as it already did once for the
+`act()` fix.
 
 ## Technical Context
 
@@ -51,20 +82,30 @@ platform that reproduced the failure and the only one that has, so far.
 (`jest.setup.ts`), a small `jest.config.js` edit, and no `app/`/`src/` runtime changes (FR-003).
 
 **Performance Goals**: `LoginScreen.test.tsx`'s first test completes in under 3000ms on a real
-`ubuntu-latest` runner (SC-001); `CrearCuentaScreen.test.tsx`'s first test likewise (SC-004). Not
-a speed feature otherwise — no target for the full suite's total wall-clock time.
+`ubuntu-latest` runner (SC-001); `CrearCuentaScreen.test.tsx`'s first test likewise (SC-004).
+**UPDATED (Round 2)**: also, the full CI job stays comfortably within its 20-minute timeout even
+with `--runInBand`'s several-fold local wall-clock increase applied to the jest stage (SC-006) —
+not a speed feature beyond that; no tighter target for the full suite's total wall-clock time.
 
 **Constraints**: Zero application behavior change (FR-003). Zero assertion weakening (FR-002).
-No `testTimeout` change without an explicit human-authorized escalation (FR-001/FR-006). Must
-merge before `014`'s PR #9 (FR-008). No history-rewriting on this feature's own branch (repo's
-`feature-branch` skill).
+No `testTimeout` change without an explicit human-authorized escalation (FR-001/FR-006) — this
+already held once, for real, when the `act()` fix proved insufficient. ~~Must merge before `014`'s
+PR #9 (FR-008).~~ **Superseded (Round 2)**: `014` merged first, by human decision — see Round 2
+Amendment. **NEW (Round 2)**: the CI-only concurrency bound (`--runInBand`) MUST NOT affect a
+developer's local run (FR-009) and MUST be applied via `init.sh`, not `jest.config.js` or a new
+`package.json` script (FR-010). No history-rewriting on this feature's own branch (repo's
+`feature-branch` skill) — still applies, though the throwaway-branch mechanism this originally
+protected against is now moot.
 
-**Scale/Scope**: One new file (`jest.setup.ts`, likely 20–40 lines), a 1–3 line addition to
-`jest.config.js` (`setupFiles: ["<rootDir>/jest.setup.ts"]` or similar), and — only if the
-mock-based approach alone proves insufficient once measured — a small, additive, defensive
-change to how `Icon`-rendering components behave under test (still zero visible-behavior change).
-Plus the throwaway CI-evidence artifact described below, which is explicitly NOT part of this
-feature's shipped diff.
+**Scale/Scope**: One new file (`jest.setup.ts`, ~23 lines, **implemented** — see
+`progress/impl_015-ci-test-timeout.md`), a small addition to `jest.config.js` (`setupFiles`,
+**implemented**). **NEW (Round 2)**: a small, additive change to `init.sh` stage 7 (a `CI`-
+conditional around the existing `npm test` invocation, following the same additive-flag pattern
+`014-continuous-integration` established for `--skip-install`) — no new file, no new
+`package.json` script, no `jest.config.js` change for this second remedy. ~~Plus the throwaway
+CI-evidence artifact described below, which is explicitly NOT part of this feature's shipped
+diff.~~ **Superseded (Round 2)**: no throwaway artifact exists or is needed — see "CI evidence
+mechanism" below.
 
 ## Constitution Check
 
@@ -120,8 +161,101 @@ No violations requiring a Complexity Tracking entry.
   unwrapped. `task-implementer` should re-run the full suite with `--verbose` after the
   `expo-font` mock and grep for the warning as the concrete check (spec.md SC-003), not assume
   one mock is enough without checking.
+- **CONFIRMED BY IMPLEMENTATION (Round 2), two real findings worth recording so nobody re-derives
+  them**: (1) `setupFiles` and `setupFilesAfterEnv` (this plan's original text called the latter
+  `setupFilesAfterEach`, which does not exist as a jest config key — a factual typo, corrected
+  here) were BOTH empirically tested and both fully silence the target warning; `setupFiles` was
+  kept because this specific mock needs no test-framework globals, matching what the hook is
+  documented for — not because the alternative failed. (2) The fix eliminates every
+  `@expo/vector-icons`/`Icon` warning, consistently (44 → 0 across 6+ runs), but does NOT touch a
+  separate, pre-existing, unrelated, low-probability warning from `useKycGate.test.ts`
+  (`@tanstack/query-core`'s `notifyManager`, a real timer race, ~1/3 of full-suite runs) —
+  correctly left alone as out of this feature's scope (FR-001/FR-004 target `@expo/vector-icons`
+  specifically). **Most importantly**: this fix's own real CI evidence (PR #10, run 31232122050)
+  proved it does NOT fix the timeout — see spec.md's Round 2 Amendment. Kept anyway; it is a real,
+  independently valuable improvement, just not the answer to this feature's actual question.
 
-### CI evidence mechanism — how this feature's own PR gets a real CI check before `014` merges
+### Bounding jest's worker concurrency in CI — NEW (Round 2), the actual fix
+
+Real CI evidence (PR #10) falsified this plan's original premise that the `expo-font`/`act()`
+path was the timeout's cause. Two further candidate remedies were evaluated and eliminated by
+measurement before the real cause was found — recorded here for completeness, not repeated from
+spec.md's fuller numbers:
+
+- **Module/module-graph warming in a jest setup file**: dead. `setupFiles` cannot use `expect`
+  (`ReferenceError: expect is not defined` — that global doesn't exist until the test framework
+  itself is installed, which happens after `setupFiles` runs); from `setupFilesAfterEnv` it loads,
+  but more than doubles total local test time (9363ms → 20173ms) and makes the target test
+  *slower* (308ms → 432ms), because a setup file runs once per test **file**, against that file's
+  own fresh module registry — warming one file's registry is invisible to the next file's.
+- **A cheap canary test**: dead on the premise itself — top-level `import` statements evaluate at
+  module load, before any individual test's 5000ms clock starts, so the "first-test cost" was
+  never being charged to a canary's own clock either; a canary could only "absorb" cost by
+  rendering, which just relocates the risk of timing out onto the canary.
+
+**The real, measured root cause**: CPU contention from jest's default worker-pool
+oversubscription. On a 14-core dev machine, the SAME failing test measured **69ms** at
+`--maxWorkers=1`, **146ms** at `--maxWorkers=2`, **154ms** at `--maxWorkers=4`, and **308ms** at
+jest's default (13 workers) — a ~4.5x local inflation from contention alone, with no code change
+between rows. In isolation (own file, own process) the same test is 145–147ms; at
+`--maxWorkers=1` it is statistically indistinguishable from its own siblings (56–111ms) in the
+same file. This explains the "first test in a heavy suite" pattern Round 1 (and the original
+kickoff brief) observed: it is an artifact of scheduling contention among concurrently-running
+workers, not intrinsic per-test work — it vanishes entirely once there is no contention.
+
+- **Decision (human-settled, not a plan-time judgment call): `--runInBand` in CI.** Single jest
+  worker process, zero cross-test/cross-suite contention possible, by construction — not merely
+  reduced. Applied ONLY when `CI` (the standard, GitHub-Actions-set environment variable) is
+  `"true"`.
+- **Rationale**: `--maxWorkers=2` was explicitly considered and rejected — extrapolating the
+  measured CI slowdown pattern, it would likely land the target test somewhere near 4–5s against
+  the 5000ms limit, which is not a real fix, it is a future flake waiting on the next slightly
+  heavier commit or a slightly busier neighbor on a shared runner. `--runInBand`'s local
+  measurement (69ms, indistinguishable from ordinary sibling tests) is the only one of the four
+  measured settings that gives a genuinely wide margin rather than a load-dependent one — and
+  after one insufficient remedy already shipped and failed on real CI, "clear margin" is the
+  correct bar, not "passes by some amount."
+- **Wall-clock tradeoff, stated plainly rather than hidden**: fewer workers RAISES total suite
+  wall time (locally: ~2.4s at jest's default → ~9.8s at `--runInBand`) while LOWERING per-test
+  latency — the opposite of what "faster is better" intuition suggests, and correct here because
+  the 5000ms **per-test** timeout is the actual binding constraint, not the CI job's 20-minute
+  **total** budget, which the whole job (all 8 `init.sh` stages) currently uses only ~2m30s of
+  (per `014-continuous-integration`'s own closing measurement) — enormous headroom even after a
+  several-fold increase in only the jest stage (SC-006).
+- **Where the setting lives, and why (FR-010)**: a `CI`-conditional inside `init.sh` stage 7 (the
+  single place `npm test` is invoked — confirmed directly: stage 7 is guarded by `SKIP_TESTS`,
+  then a `node -e` check that `package.json` has a `scripts.test`, then plainly `npm test
+  >/tmp/init-sh-front-tests.log 2>&1`). Flags pass through correctly: `npm test -- --runInBand`
+  (verified: `npm test -- --maxWorkers=2 --listTests` correctly forwards flags to the underlying
+  `jest` invocation). GitHub Actions sets `CI=true` automatically for every step of every
+  workflow — `.github/workflows/ci.yml` needs no edit to provide it. Concretely, stage 7 becomes:
+  when `SKIP_TESTS` is unset/false and a `test` script exists, run `npm test -- --runInBand` if
+  `[ "$CI" = "true" ]`, else the existing unflagged `npm test` — everything else about the stage
+  (the `SKIP_TESTS`/no-test-script branches, the log file, the `add_result` calls) is unchanged.
+- **Alternatives considered and rejected, per the human's explicit instruction not to leave this
+  as an open choice**: (a) `jest.config.js`'s `maxWorkers`/`runInBand` — rejected, this would slow
+  every LOCAL run too (jest.config.js has no notion of "only when CI"), directly contradicting
+  FR-009's local-invisibility requirement; the whole point is a developer's fast, fully-parallel
+  local loop is untouched. (b) A new `package.json` `test:ci` script (e.g. `"test:ci": "jest
+  --runInBand"`) invoked instead of `npm test` when in CI — rejected for the same reason
+  `014-continuous-integration`'s own plan.md rejected an analogous `"ci"`/`"verify"` script: it
+  would add a second place "how tests run" is defined, which could drift from what `init.sh`
+  itself considers canonical, and `init.sh` is already this repo's single source of truth for
+  verification (per `docs/verification.md`/`AGENTS.md`). (c) Passing `--maxWorkers=2` instead of
+  `--runInBand` — rejected per the human's explicit decision above (too close to the 5000ms
+  boundary based on extrapolated CI numbers, not a real fix).
+
+### CI evidence mechanism — SUPERSEDED (Round 2), kept for history only
+
+**Do not act on the "Decision" below — it is superseded.** The human chose Option (d) (merge
+`014`'s PR #9 to `main` first, commit `0589e03`) rather than this plan's Option (c) recommendation.
+`main`, and this feature's own branch (cut from that `main`) and its own PR (**#10**), already
+carry `.github/workflows/ci.yml` — there is no need for, and no throwaway branch/PR exists or
+should be created. Every "empirically confirmed" measurement in this feature (the `act()` fix's
+insufficiency; the upcoming `--runInBand` fix) is obtained directly from PR #10's own real CI
+runs. The text below is preserved verbatim only so a future reader can see what was originally
+planned and why the human diverged, per this feature's own instruction to record such reversals
+rather than silently drop them.
 
 This is the hard planning problem named explicitly in this feature's kickoff brief. Restating the
 constraint precisely: `.github/workflows/ci.yml` exists only on the unmerged
@@ -191,6 +325,12 @@ Re-verification section already shows local evidence alone is not meaningful her
 
 ### What "empirically confirmed" means, precisely (FR-005/FR-006/SC-001)
 
+**UPDATED (Round 2)**: "the real `ubuntu-latest` run" below now unambiguously means **this
+feature's own PR #10's** `CI / verify` run (no throwaway run — see "CI evidence mechanism" above)
+— and this section's own warning about not trusting a bare pass is not hypothetical: it is
+exactly what this feature's first remedy needed and didn't get (the `act()` fix reasoned
+correctly locally and still failed for real on CI).
+
 - **Decision**: "Confirmed" means reading the actual per-test duration for
   `LoginScreen.test.tsx`'s first test (and `CrearCuentaScreen.test.tsx`'s, per FR-007) directly
   from the real `ubuntu-latest` run's logs (jest's own per-test timing output, or `--json` output
@@ -229,43 +369,46 @@ the top of this file.
 ### Source Code (repository root)
 
 ```text
-jest.setup.ts                      # NEW — mocks expo-font's isLoaded() to always return true
-                                    # (see "actual jest-setup-file mechanism" Research Decision
-                                    # above), preventing @expo/vector-icons' Icon component from
-                                    # ever entering its async componentDidMount branch during
-                                    # tests. No application code touched. Referenced by
-                                    # jest.config.js's setupFiles.
+jest.setup.ts                      # NEW, IMPLEMENTED (T002) — mocks expo-font's isLoaded() to
+                                    # always return true (see "actual jest-setup-file mechanism"
+                                    # Research Decision above), preventing @expo/vector-icons'
+                                    # Icon component from ever entering its async
+                                    # componentDidMount branch during tests. No application code
+                                    # touched. Referenced by jest.config.js's setupFiles. KEEP —
+                                    # real, valuable, independent of whether it alone fixes the
+                                    # timeout (it doesn't).
 
-jest.config.js                     # MODIFIED — additive only: a new setupFiles (or
-                                    # setupFilesAfterEach, whichever Phase 1/implementation
-                                    # confirms is the correct hook for a mock that must be in
-                                    # place before any module under test imports expo-font)
-                                    # entry pointing at jest.setup.ts. Every other existing key
-                                    # (preset, moduleNameMapper, modulePathIgnorePatterns —
-                                    # whatever state that key is actually in on main when this
-                                    # feature's branch is cut, see spec.md Assumptions)
+jest.config.js                     # MODIFIED, IMPLEMENTED (T003) — additive only: setupFiles:
+                                    # ["<rootDir>/jest.setup.ts"]. Every other existing key
+                                    # (preset, moduleNameMapper, modulePathIgnorePatterns)
                                     # untouched.
 
-src/features/identity/LoginScreen.test.tsx   # UNCHANGED — zero assertion edits (FR-002). Only
-                                              # touched if, after measurement, a specific
-                                              # component-level defensive fix (not this file's
-                                              # test code) is needed and that fix's own new
-                                              # behavior needs a new, additive test — decided
-                                              # only if research proves insufficient, not
-                                              # pre-planned.
+init.sh                            # NEW (Round 2) — stage 7 ("Running test suite") gains a
+                                    # `CI`-conditional: when `[ "$CI" = "true" ]`, run `npm test
+                                    # -- --runInBand` instead of the existing unflagged `npm
+                                    # test`. Everything else about the stage (SKIP_TESTS branch,
+                                    # no-test-script branch, log file path, add_result calls)
+                                    # unchanged. A developer's local, unflagged (no CI env var)
+                                    # run is byte-for-byte unaffected — same additive pattern
+                                    # `014-continuous-integration` established for
+                                    # `--skip-install`.
 
-progress/impl_015-ci-test-timeout.md         # NEW (once implementation starts) — records the
-                                              # real CI evidence (SC-001/SC-004's measured
-                                              # numbers) per the "CI evidence mechanism" Research
-                                              # Decision's retention requirement.
+src/features/identity/LoginScreen.test.tsx   # UNCHANGED — zero assertion edits (FR-002),
+                                              # confirmed via git diff at T005. Stays unchanged
+                                              # for the Round 2 fix too — --runInBand needs no
+                                              # test-file change of any kind.
+
+progress/impl_015-ci-test-timeout.md         # EXISTS, being appended to across runs — records
+                                              # real CI evidence (SC-001/SC-004/SC-006's measured
+                                              # numbers) from this feature's own PR #10.
 ```
 
-Nothing under `.github/` is part of this feature's shipped diff — the workflow file used to
-gather CI evidence lives only on the temporary, throwaway branch described above, never merged.
+`.github/` is NOT part of this feature's shipped diff — `.github/workflows/ci.yml` already exists
+on `main` (via `014`, merged first) and is not modified by this feature.
 
 **Structure Decision**: Single Expo project, unchanged (Constitution I). This feature's shipped
-footprint is exactly two files (`jest.setup.ts` new, `jest.config.js` modified), plus the
-progress report — the smallest footprint of any `"sdd": true` feature in this repo to date,
+footprint is `jest.setup.ts` (new), `jest.config.js` (modified), and `init.sh` (modified,
+additive) — still the smallest footprint of any `"sdd": true` feature in this repo to date,
 consistent with it being a targeted infrastructure fix, not a UI feature (spec.md FR-003).
 
 ## Data Model
@@ -274,43 +417,48 @@ None. See spec.md's Key Entities section (N/A).
 
 ## Interface Contracts
 
-This feature's only "interface" is the jest setup/config contract between `jest.config.js` and
-the new `jest.setup.ts` — not an HTTP endpoint or SDK call:
+This feature's interfaces are both internal, plain-file contracts — not an HTTP endpoint or SDK
+call:
 
 | Hook | File | Behavior |
 |---|---|---|
-| `setupFiles` (or `setupFilesAfterEach` — confirm at implementation time which jest lifecycle hook runs early enough to mock `expo-font` before any test file's own imports resolve it) | `jest.setup.ts` | `jest.mock("expo-font", () => ({ ...jest.requireActual("expo-font"), isLoaded: () => true }))` (exact shape to be finalized in implementation — spreading the real module's other exports keeps anything else `expo-font` provides working unchanged, only `isLoaded` is overridden) |
+| `setupFiles` | `jest.setup.ts` | `jest.mock("expo-font", () => ({ ...jest.requireActual("expo-font"), isLoaded: () => true }))` — implemented, spreading the real module's other exports so nothing else `expo-font` provides is affected. |
+| `init.sh` stage 7, `CI`-conditional | `init.sh` | When `[ "$CI" = "true" ]`: `npm test -- --runInBand`. Otherwise (default, local): the existing, unmodified `npm test`. `CI=true` is set automatically by GitHub Actions for every workflow step — no `.github/workflows/ci.yml` edit needed to provide it. |
 
-**CI-evidence-only artifact** (never merged, not part of this feature's real interface, listed
-here only so `task-implementer` knows exactly what the throwaway branch needs): `014`'s
-`.github/workflows/ci.yml` as of commits `e309d45`+`7b69138`, cherry-picked verbatim onto a
-disposable branch created from `015-ci-test-timeout`'s tip.
+~~**CI-evidence-only artifact**...~~ **Superseded (Round 2)** — no throwaway artifact; see "CI
+evidence mechanism" above.
 
 ## Quickstart Validation
 
-Once `tasks.md` is implemented, validate:
+**UPDATED (Round 2).** T002–T005 (the `jest.setup.ts` fix) are already implemented and locally
+verified — see `progress/impl_015-ci-test-timeout.md`'s Run 1. What remains:
 
-1. Run `npx jest src/features/identity/LoginScreen.test.tsx --verbose` locally and confirm all 11
-   tests still pass, with the same assertions as before (spot-check the first test's output
-   against spec.md's Acceptance Scenario 3 list).
-2. Run the full suite locally (`npx jest` or `./init.sh`) and confirm `630/630` still pass (the
-   count may have grown if other work has landed since this spec was written — confirm it matches
-   whatever `main` reports at implementation time, not a hardcoded 630).
-3. Run `npx jest --verbose 2>&1 | grep -c "not wrapped in act"` (or equivalent) and confirm `0`
-   (SC-003) — currently non-zero whenever an icon-rendering suite runs (confirmed in this feature's
-   Re-verification section, e.g. `Viewfinder.test.tsx`).
-4. Follow the "CI evidence mechanism" Research Decision above: cherry-pick `014`'s workflow onto a
-   throwaway branch, open a throwaway PR against `main` (human authorization required), observe
-   the real `ubuntu-latest` run, and record `LoginScreen.test.tsx`'s and
-   `CrearCuentaScreen.test.tsx`'s first-test durations from that run's logs.
-5. Compare those durations against SC-001/SC-004 (under 3000ms). If both pass with margin, close
-   the throwaway PR unmerged, delete its branch, and record the evidence in
-   `progress/impl_015-ci-test-timeout.md`. This feature is now ready for its own (real, `015`-only)
-   PR against `main`.
-6. If either duration fails SC-001/SC-004's margin, do not proceed to open `015`'s real PR — set
-   `feature_list.json`'s `015-ci-test-timeout` status to `blocked`, record the measured numbers
-   and remaining options (spec.md Clarifications' second bullet / FR-006) in
-   `progress/current.md`, and stop for the human.
+1. Implement the `init.sh` stage 7 `CI`-conditional (Round 2's "Bounding jest's worker
+   concurrency in CI" Research Decision). Verify locally, twice: (a) run `./init.sh` (or `npm
+   test`) with no `CI` env var set — confirm stage 7 behaves exactly as before this change (full
+   parallel run, same wall-clock ballpark as today); (b) run `CI=true ./init.sh --skip-install
+   --skip-build` (or `CI=true npm test -- --runInBand` directly) — confirm stage 7's log shows
+   jest actually ran with `--runInBand` (e.g. jest's own startup log naming a single worker, or
+   the ~4x local wall-clock increase Round 2's measurement table predicts) and that all tests
+   still pass.
+2. Confirm `git diff -- src/features/identity/LoginScreen.test.tsx` is empty (FR-002 — still
+   true, this remedy touches no test file).
+3. **Requires explicit, real human authorization to push** (already given for PR #10 specifically,
+   per the coordinator's Round 2 instruction — re-confirm at execution time if resuming from a
+   different session): push the `init.sh` change to `015-ci-test-timeout` (PR #10's branch).
+   Watch its `CI / verify` check run to completion on the real `ubuntu-latest` runner.
+4. From that run's logs, record in `progress/impl_015-ci-test-timeout.md`: (a) the full pass/fail
+   summary; (b) `LoginScreen.test.tsx`'s first test's exact measured duration; (c)
+   `CrearCuentaScreen.test.tsx`'s first test's duration (FR-007); (d) the total job duration
+   (SC-006).
+5. Compare against SC-001/SC-004 (under 3000ms) and SC-006 (comfortably within the 20-minute job
+   timeout). If all pass with clear margin: this feature is done — proceed to close it out
+   (`feature_list.json` status, `docs/verification.md` update, etc., per `tasks.md`'s Polish
+   phase).
+6. If any duration fails its margin — this is the SAME escalation FR-006 already required once:
+   do NOT add `testTimeout`. Set `feature_list.json`'s `015-ci-test-timeout` status to `blocked`,
+   record the measured numbers and remaining options in `progress/current.md`, and stop for the
+   human.
 
 ## Complexity Tracking
 

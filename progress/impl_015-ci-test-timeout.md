@@ -174,3 +174,173 @@ completeness)
   authorization to push `015-ci-test-timeout` and open its own PR (per this feature's own
   Plan Amendment 2026-08-07, T006 no longer needs the throwaway-branch mechanism, but still
   needs authorization to push/open a PR at all).
+
+## Run 2 — 2026-08-07 (T014–T015 only)
+
+Scope for this run: **T014 and T015 only**, per explicit instruction. T016 (the push + real
+CI run) was **not** attempted — that's the orchestrator's own job, not mine. T006–T013's
+real-CI evidence (PR #10, run 31232122050; the `blocked` status; the two eliminated candidate
+remedies) was already recorded in `tasks.md`/`spec.md`/`plan.md`/`feature_list.json` by a
+prior session before this run started — I did not re-derive or re-litigate any of it, per
+this run's own brief. `tasks.md` had T006, T007, T008 already marked `[X]` (with T009/T010
+correctly left `[ ]` and annotated superseded/obsolete) on disk before I touched anything.
+
+Read first, as instructed: `tasks.md`'s amended header, T014/T015 in full, plan.md's
+"Bounding jest's worker concurrency in CI" Research Decision, spec.md's amended FR-001/FR-006
+and measurement tables, `.specify/memory/constitution.md`, `docs/conventions.md`,
+`docs/verification.md`. The root cause (jest worker-pool oversubscription, `--runInBand`
+human-settled as the fix) was treated as settled, not re-derived.
+
+### Files changed
+
+- **`init.sh`** — additive-only edit to stage 7 ("Running test suite"). Added a `CI`-
+  conditional: when `[ "${CI:-}" = "true" ]`, run `npm test -- --runInBand` instead of the
+  existing unflagged `npm test`; everything else (the `SKIP_TESTS` branch, the no-`test`-
+  script branch, the log file path `/tmp/init-sh-front-tests.log`, every `add_result` call)
+  is byte-for-byte unchanged. Added a short comment above the block citing the actual
+  measured numbers (69ms @ `--maxWorkers=1` vs 308ms @ jest's local default of 13 workers)
+  and why the CI-only conditional lives here rather than in `jest.config.js` — per
+  `docs/conventions.md`'s "only comment non-obvious why" convention.
+
+  **One deviation from the task's literal wording, made for correctness, not scope creep**:
+  T014's own text says `when [ "$CI" = "true" ]`. `init.sh` runs under `set -uo pipefail`
+  (line 34) — referencing an unset `$CI` directly under `set -u` is a **fatal, immediate
+  script-abort** in bash (confirmed: `bash -uo pipefail -c 'unset CI; [ "$CI" = "true" ]'` →
+  `bash: CI: unbound variable`, exit 127), which would have broken every developer's local
+  `./init.sh` run the moment they don't have a `CI` env var set (the overwhelming common
+  case). Used `[ "${CI:-}" = "true" ]` instead — same conditional, safe under `set -u`,
+  verified locally (see below) to produce byte-for-byte the same local behavior T014/FR-009
+  actually require. Flagging this explicitly since it's a literal deviation from the task's
+  exact quoted syntax, even though the resulting behavior is exactly what FR-009/FR-010 ask
+  for.
+
+- **`specs/015-ci-test-timeout/tasks.md`** — T014 and T015 marked `[X]`. T016–T018 left `[ ]`
+  (not attempted — pushing/watching CI is the orchestrator's job per this run's brief).
+
+No changes to `jest.config.js`, `jest.setup.ts`, `package.json`, or anything under `app/`/
+`src/` (confirmed via `git diff` — empty for all four). `src/features/identity/
+LoginScreen.test.tsx` is byte-for-byte unchanged (`git diff` empty).
+
+### T015 — local verification, twice, with real numbers
+
+**(a) No `CI` env var set — confirms the parallel path is unchanged (FR-009's local-
+invisibility requirement):**
+
+```
+$ unset CI; npm test
+Test Suites: 85 passed, 85 total
+Tests:       630 passed, 630 total
+Time:        2.266 s
+```
+(`726% cpu` per the shell's own `time` output — confirms multiple jest workers actually ran,
+not accidentally serialized by something else.) This matches Run 1's T005 baseline (`./init.sh
+--skip-install --skip-build`: SUCCESS 8/8, full suite green) and plan.md's own "~2.4s at jest's
+default" local measurement almost exactly — the unflagged path is provably untouched by this
+change.
+
+**(b) `CI=true` — confirms the conditional actually activates and forwards `--runInBand`:**
+
+1. Flag-forwarding re-confirmed generically first: `CI=true npm test -- --listTests` and
+   `CI=true npm test -- --runInBand --listTests` both work, listing all 85 suite files —
+   `npm test -- <flags>` correctly passes flags through to the underlying `jest` invocation
+   (re-confirming plan.md's already-verified `--maxWorkers=2` finding, this time with
+   `--runInBand` specifically).
+2. Sanity check that jest itself doesn't silently change worker count just because `CI=true`
+   is set (it doesn't — jest has no such auto-behavior for worker count): `CI=true npm test`
+   (no explicit `--runInBand`) → `630 passed, 630 total`, **Time: 2.212 s**, `775% cpu` —
+   statistically identical to the no-`CI` run. This confirms the speed difference measured
+   next is attributable specifically to `init.sh`'s own `--runInBand` forwarding, not to jest
+   reacting to the `CI` env var on its own.
+3. **The actual `init.sh` conditional itself**, run for real:
+   ```
+   $ CI=true ./init.sh --skip-install --skip-build --skip-doctor --skip-native
+   ▶ 7/8 Running test suite
+   ✅ [OK] Tests: all tests passed (--runInBand, CI=true)
+   RESULT: SUCCESS (8/8 stages passed)
+   ```
+   `/tmp/init-sh-front-tests.log` (the actual jest output from that run):
+   ```
+   Test Suites: 85 passed, 85 total
+   Tests:       630 passed, 630 total
+   Time:        9.7 s, estimated 25 s
+   ```
+   9.7s in-band vs 2.266s parallel — matches plan.md's predicted "~2.4s → ~9.8s" almost
+   exactly. All 630 tests still pass; zero new failures.
+4. **The target test's duration, specifically, under the real CI-only code path**:
+   ```
+   $ CI=true npx jest src/features/identity/LoginScreen.test.tsx --runInBand --verbose
+   ✓ replaces SignInForm with the neutral 'Signing you in…' view on a successful
+     sign-in and navigates nowhere (145 ms)
+   Tests: 11 passed, 11 total
+   ```
+   145ms — consistent with plan.md/spec.md's own local `--runInBand` isolation measurements
+   (69–147ms range), a comfortable local margin under both the 5000ms hard limit and the
+   3000ms SC-001 target. **This is a local number only** — per FR-005/spec.md's Assumptions,
+   it does not by itself prove SC-001 on the real `ubuntu-latest` runner; that proof is T016–
+   T018, explicitly out of this run's scope.
+5. `git diff -- src/features/identity/LoginScreen.test.tsx` → empty (zero lines changed),
+   confirmed again for this second remedy exactly as T005 confirmed it for the first.
+
+### Incidental observations (not assumed to matter, reported per this run's brief)
+
+- `CI=true` alone (no explicit jest flag) does not change jest's own reported worker count or
+  wall-clock time in this repo's setup — confirmed above (2.212s vs 2.266s). It's `init.sh`'s
+  explicit `-- --runInBand` forwarding doing all the work, not any jest-internal `CI` auto-
+  detection.
+- No other output-format differences were observed between `CI=true` and unset runs (same
+  `PASS`/`Test Suites`/`Tests`/`Time` lines, same summary shape) in this repo's jest config —
+  nothing else appeared to need reporting.
+
+### What this run does and does not prove
+
+Per FR-005/spec.md's Assumptions (restated in this run's own brief): a green local run,
+including a green local `--runInBand` run, does **not** prove the CI timeout is fixed — the
+whole premise of Round 2 is that local numbers already once looked sufficient (the `act()`
+fix) and were not. What this run establishes, precisely:
+
+- The `CI`-conditional in `init.sh` is implemented correctly, is additive-only, and is
+  provably a no-op for a developer's local, unflagged run (FR-009) — same wall-clock ballpark,
+  same pass count, same `add_result` shape as before this change.
+- The conditional genuinely activates under `CI=true` and correctly forwards `--runInBand` to
+  jest (verified both generically via `--listTests` and concretely via the real `init.sh`
+  stage-7 code path and its log output).
+- Locally, under the real CI-only code path, the target test (145ms) and the full suite
+  (630/630, 9.7s) show numbers consistent with plan.md's predictions and with a comfortable
+  margin under jest's 5000ms timeout and SC-001's 3000ms target.
+- **What it cannot establish**: whether this actually clears the timeout on a real, CPU-
+  constrained `ubuntu-latest` runner. That requires T016 (push, with human authorization) and
+  T017/T018 (record and evaluate the real run's measured numbers) — explicitly the
+  orchestrator's job per this run's brief, not attempted here.
+
+### Requirement traceability (this run's scope)
+
+| FR / SC | Covered by |
+|---|---|
+| FR-009 (CI-only bound; local run stays unbounded/unaffected) | T015(a) — no-`CI` local run: 630/630, 2.266s, matching the pre-existing baseline exactly |
+| FR-010 (mechanism lives in `init.sh` only, not `jest.config.js`/a new `package.json` script) | `git diff` confirms zero changes to `jest.config.js`/`package.json`; `init.sh` stage 7 is the sole edit |
+| FR-002 (no assertion weakened) | `git diff -- src/features/identity/LoginScreen.test.tsx` → empty, confirmed again for this remedy |
+| FR-003 (no app runtime change) | Zero changes under `app/`/`src/` this run |
+| SC-002 (630/630, zero new failures) | Both T015(a) and T015(b) runs: 85/85 suites, 630/630 tests |
+
+### Verification performed
+
+- `bash -n init.sh` → syntax OK.
+- `node_modules/.bin/tsc --noEmit` → clean, no type errors.
+- `npm test` (no `CI`) → 630/630, 2.266s. `CI=true ./init.sh --skip-install --skip-build
+  --skip-doctor --skip-native` → `RESULT: SUCCESS (8/8 stages passed)`, Tests stage reads
+  "all tests passed (--runInBand, CI=true)".
+- `grep -rn "testTimeout" jest.config.js jest.setup.ts init.sh` → no hits — the hard
+  constraint (no `testTimeout` anywhere) holds.
+- Full `./init.sh` (all 8 stages, no skip flags, no `CI` set) was **not** re-run in this
+  session — only the local/no-CI and `CI=true` paths relevant to T015 were exercised, per
+  this run's own instruction to verify those two specifically; `--skip-build`/`--skip-doctor`/
+  `--skip-native` were used for speed on repeated `CI=true` runs since neither bundling nor
+  `expo-doctor` output is affected by this change.
+
+### Task status
+
+- [X] T014
+- [X] T015
+- T016–T018: **not started** — requires explicit, real-time human authorization to push to
+  PR #10's branch and watch its real `CI / verify` run; per this run's own brief, that's the
+  orchestrator's job, not this run's.
