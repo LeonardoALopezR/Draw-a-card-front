@@ -217,7 +217,11 @@ if [ "$SKIP_TESTS" = true ]; then
 elif ! node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)' 2>/dev/null; then
   add_result "Tests" "WARN" "no \"test\" script in package.json yet — set up a test runner (e.g. jest + @testing-library/react-native) when the first feature needs one, per docs/verification.md"
 elif [ "${CI:-}" = "true" ]; then
-  if npm test -- --runInBand >/tmp/init-sh-front-tests.log 2>&1; then
+  # --verbose emits each test's own duration ("✓ name (148 ms)"), which is what makes a per-test
+  # timeout regression measurable from a PASSING CI run rather than only inferable from the
+  # suite total. The extra lines are cheap here: this output goes to the log file below, which
+  # the workflow prints inside a collapsed ::group::, so it costs a reader nothing unopened.
+  if npm test -- --runInBand --verbose >/tmp/init-sh-front-tests.log 2>&1; then
     add_result "Tests" "OK" "all tests passed (--runInBand, CI=true)"
   else
     add_result "Tests" "FAIL" "see /tmp/init-sh-front-tests.log: $(tail -n 8 /tmp/init-sh-front-tests.log | tr '\n' ' ')"
