@@ -182,47 +182,57 @@ timeout, and the two candidate remedies have now been empirically eliminated. Ne
 
 ## Next step
 
-**Blocked on a human decision (FR-006). Do not pick a remedy without it.**
+**Round 3 shipped. Both PRs pushed; awaiting a cache-HIT measurement, then merge decisions.**
 
-Both PRs are pushed. [PR #9](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/9) merged
-(014's workflow is on `main`); [PR #10](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/10)
-is open with 015's `jest.setup.ts` fix, its check red.
+[PR #9](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/9) merged (014's workflow is on
+`main`). [PR #10](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/10) is **green**.
 
-What was measured, so nobody re-derives it:
+### The three-round root-cause hunt, so nobody re-derives it
 
-| | before | after act() fix | + module warming |
-|---|---|---|---|
-| act warnings (local) | 44 | **0** | 0 |
-| total test time (local) | 11208ms | **9363ms (-16%)** | 20173ms (+115%) ✗ |
-| the failing test (local) | 311ms | 308ms (-1%) | 432ms ✗ |
-| the failing test (CI) | >5000ms ✗ | **>5000ms ✗** | not run |
+| Round | Hypothesis | Verdict |
+|---|---|---|
+| 1 | `@expo/vector-icons` async font load (`act()` warnings) | Real win (44 warnings → 0, −16% local) but **did not fix the timeout** (311→308ms) |
+| 2 | jest worker oversubscription / CPU starvation | Real contributor (69ms @ 1 worker vs 308ms @ 13). `--runInBand` kept — but only got CI to 3885ms of 5000ms |
+| 3 | **Cold jest transform cache** | **Dominant term.** Warm 147ms → `--clearCache` 1666ms (11x) → warm 146ms |
 
-**Two remedies are eliminated by measurement, not opinion:**
+Eliminated by measurement, do not retry: module warming in a setup file (fails from `setupFiles`;
+from `setupFilesAfterEnv` it doubles total test time and slows the target test), and a canary test
+(imports evaluate at module load, outside any test's clock).
 
-1. *Module warming in a setup file* — from `setupFiles` it cannot even load
-   (`ReferenceError: expect is not defined`); from `setupFilesAfterEnv` it runs but more than
-   doubles total test time and makes the target test slower, because setup runs once per test FILE.
-2. *A cheap canary test* — almost certainly dead too: the ~240ms is **first-`render()` lazy
-   initialization**, not import cost (top-level imports evaluate at module load, outside any test's
-   clock). A canary can only absorb it by rendering, which makes the canary the thing that times out.
+### Measured on real runners
 
-**Remaining options, for the human:**
+| | value |
+|---|---|
+| Target test, CI cache MISS | **3999ms** (run 31234302973) — passes under the CI-only 15000ms ceiling |
+| Target test, CI before Round 3 | 3885ms of a 5000ms limit — 22% headroom, SC-001 failed |
+| `CrearCuentaScreen` first test | 1019ms |
+| Suite total | 630/630, 85 suites, 28.9s |
+| Job wall | 140–158s against a 20-minute timeout |
 
-- **(a) A scoped `testTimeout`** — for `LoginScreen.test.tsx` alone, or globally. `spec.md` allows
-  this only with explicit sign-off. That sign-off is far better justified now than when it was first
-  declined, because the alternatives were tried and failed rather than merely disliked. Sizing: the
-  test is ~5-6s in CI (suite 10.58s, its other ten tests ~360ms each), so 15000ms carries wide margin.
-- **(b) Genuinely reduce first-render cost** — open-ended, unproven, and risks touching app code,
-  which FR-003 forbids.
-- **(c) Accept red for now** — viable only while branch protection stays off; leaves `main` red and
-  014 blocked indefinitely.
+**A lesson worth keeping**: suite-level timing hid this. From `LoginScreen`'s 6.759s suite total the
+orchestrator inferred the test was ~600ms; it was 3885ms — wrong by ~6x. Switching the workflow's
+log dump to `if: always()` and adding `--verbose` to CI's jest call is what made it visible.
 
-**Keep the `act()` fix either way** — 44 warnings to 0 and -16% local test time, zero test files
-modified, no assertion weakened. It is correct and valuable independently of the timeout.
+### Human sign-off on record
 
-Then, to close 014: T003's green run (satisfied once `main` goes green), T004 (confirm zero Actions
-secrets), T007 (HUMAN-ONLY branch protection — **do not enable until `main` is green**). 014's
-tasks.md T006 box is deliberately still unchecked to avoid a cross-feature edit, though T006 itself
-is satisfied by run 31231468258.
+The `--testTimeout` is a documented, explicitly human-authorized exception to this feature's own
+FR-006 (2026-08-07: the human chose (a) cache + (c) scoped timeout), NOT a bypass. It is scoped to
+CI only — `jest.config.js` deliberately keeps jest's strict 5000ms default so a genuinely slow test
+still fails fast in development.
+
+### Outstanding
+
+1. **A cache-HIT CI run** to prove the transform cache actually persists and to record the warm
+   duration. Run A was necessarily a MISS because it changed `jest.config.js` (a keyed file).
+2. **Re-review**: `code-reviewer` returned CHANGES_REQUESTED earlier; its blocking finding (real
+   per-test CI evidence unrecorded/unrecoverable) is now closed by measurement, but the Round 3
+   changes have not been reviewed.
+3. **Merge decisions (human)**: whether to merge PR #10, and 014's remaining T007.
+4. **T007 — HUMAN-ONLY branch protection.** Now much safer to enable than before: the check is
+   green and the margin is no longer 22%. Still the human's action; an agent cannot do it.
+5. 014's `tasks.md` boxes for T003/T004/T006 are satisfied in substance (green run observed; zero
+   Actions secrets and variables confirmed via `gh secret list`/`gh variable list`; push-triggered
+   run 31231468258 fired against `main`) but left unchecked to avoid a cross-feature edit from
+   015's branch. Check them during 014's wrap-up.
 
 Also still parked: **012-home-visual-alignment**, `spec_ready` at its own approval gate.
