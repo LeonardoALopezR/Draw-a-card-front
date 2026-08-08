@@ -29,3 +29,17 @@ jobs:
       - run: npm ci
 
       - run: ./init.sh --skip-install
+
+      # init.sh summarizes a failed stage with only `tail -n 5` of its log, which is enough
+      # locally (the full log is still on disk) but leaves a CI reader unable to see the actual
+      # assertion — the stage is identifiable, the cause is not. Dump the full logs on failure so
+      # the check's own output is sufficient to diagnose the break (spec.md SC-004).
+      - name: Dump init.sh stage logs on failure
+        if: failure()
+        run: |
+          for log in /tmp/init-sh-front-*.log; do
+            [ -f "$log" ] || continue
+            echo "::group::$log"
+            cat "$log"
+            echo "::endgroup::"
+          done
