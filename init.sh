@@ -200,7 +200,7 @@ fi
 log "7/8 Running test suite"
 if [ "$SKIP_TESTS" = true ]; then
   add_result "Tests" "WARN" "skipped (--skip-tests)"
-elif ! npm run | grep -q '^  test$'; then
+elif ! node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)' 2>/dev/null; then
   add_result "Tests" "WARN" "no \"test\" script in package.json yet — set up a test runner (e.g. jest + @testing-library/react-native) when the first feature needs one, per docs/verification.md"
 elif npm test >/tmp/init-sh-front-tests.log 2>&1; then
   add_result "Tests" "OK" "all tests passed"

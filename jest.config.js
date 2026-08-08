@@ -16,4 +16,10 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
+  // Git worktrees created under .claude/worktrees/ are full copies of this repo (own app/,
+  // src/ and node_modules). Without this, a run from the main checkout crawls into them and
+  // executes every test twice — once against the nested node_modules — which both trips
+  // "Haste module naming collision: draw-a-card-front" and fails the duplicated suites with
+  // "__fbBatchedBridgeConfig is not set". Worktrees run their own jest from their own root.
+  modulePathIgnorePatterns: ["<rootDir>/.claude/worktrees/"],
 };
