@@ -22,4 +22,15 @@ module.exports = {
   // "Haste module naming collision: draw-a-card-front" and fails the duplicated suites with
   // "__fbBatchedBridgeConfig is not set". Worktrees run their own jest from their own root.
   modulePathIgnorePatterns: ["<rootDir>/.claude/worktrees/"],
+  // specs/015-ci-test-timeout: mocks expo-font's isLoaded() so @expo/vector-icons' Icon
+  // component never enters its async componentDidMount branch during tests (see
+  // jest.setup.ts's own comment for the full why). Verified empirically (T003/T004, see
+  // progress/impl_015-ci-test-timeout.md) that both setupFiles and setupFilesAfterEnv fully
+  // silence the warning here — each runs once per test file before that file's own imports
+  // resolve, in the same fresh module registry, so jest.mock("expo-font", ...) registers in
+  // time either way for this particular mock. setupFiles is used because jest.setup.ts needs
+  // no test-framework globals (expect/testing-library matchers) itself — it's a pure
+  // module-registry mock, exactly what setupFiles (pre-test-framework) is for; there is no
+  // observed functional difference for this specific fix.
+  setupFiles: ["<rootDir>/jest.setup.ts"],
 };

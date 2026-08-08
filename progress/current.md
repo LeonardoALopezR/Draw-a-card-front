@@ -2,7 +2,8 @@
 
 **Started**: 2026-08-07
 **Feature**: 014-continuous-integration
-**State**: in_progress on branch `014-continuous-integration` (cut from main @ 96553ab)
+**State**: 014 `blocked` on the newly-registered 015-ci-test-timeout. PR #9 is open; the CI check
+works and correctly reports FAILURE on a real pre-existing test bug.
 
 ## What happened this session
 
@@ -99,23 +100,106 @@
   explicitly rather than implying more confidence than the evidence supports. T003/T004 are what
   close it, and they need the human to authorize a push and a PR.
 
+- **Committed, pushed, opened PR #9** at the human's explicit instruction. Two commits kept
+  separate: `e309d45` (the workflow + `init.sh --skip-install` + docs) and `4e2ee8c` (bookkeeping:
+  014's ledger entry, the 011/012/013 registrations, and 012's spec docs so the `spec_dir` the
+  ledger points at exists on `main`). `jest.config.js` was deliberately EXCLUDED — it carries the
+  sibling session's `modulePathIgnorePatterns` worktree fix, which is not 014's work and which CI
+  does not need (no worktrees on a runner).
+- **THE WORKFLOW WORKS, and it caught a real bug within minutes of existing.** Confirmed on the
+  real runner, twice: check appears on the PR, all 10 stages run, both pre-existing warnings graded
+  WARN without failing the build (SC-003 proven on real evidence), all three bundles exported on
+  `ubuntu-latest` with no macOS runner and no Xcode/Android SDK, `.env` self-provisioned with zero
+  secrets, total 2m30s against a 20-minute timeout.
+- **The fail case was proven by a genuine bug, so no synthetic broken commit was needed.**
+  `LoginScreen.test.tsx`'s first test throws `Exceeded timeout of 5000 ms for a test` on the runner
+  while passing 630/630 locally. Could not be reproduced locally under `CI=true`, `TZ=UTC`, in
+  isolation, or with `--maxWorkers=2`.
+- **Diagnosis is more systemic than "one slow test"**, per measured per-test durations: the failing
+  test is 311ms locally (>16x blowup in CI), while two tests that are SLOWER locally (449ms, 409ms)
+  passed. The rest of its suite ran only ~5.5x slower. The distinguishing property is being the
+  FIRST test in a heavy suite, absorbing one-time module-load/first-render cost against jest's 5s
+  per-test clock. `CrearCuentaScreen.test.tsx` (11.98s in CI) is the likely next victim. Verified
+  there is no jest setup file, no `@expo/vector-icons` mock, and no `testTimeout` anywhere.
+- **Fixed one gap inside 014 — a strengthening, not the warned-against weakening**: `init.sh` tails
+  only 5 log lines and writes full output to `/tmp`, which is unusable on a runner whose filesystem
+  vanishes at job end. Added a failure-only workflow step dumping every `/tmp/init-sh-front-*.log`
+  in `::group::` blocks. That step is what produced the diagnosis above, and it is what SC-004
+  actually requires. `init.sh` itself was not touched; local behavior unchanged.
+- Registered **015-ci-test-timeout** (`pending`) with the full verified findings, and set 014 to
+  `blocked` with a `blocked_reason` naming the exact unblock sequence. Per the human's decision the
+  fix ships in its own PR, merged before #9, targeting the `act()` cause rather than raising
+  `testTimeout` — but 015's notes flag that the measurement gathered *after* that decision suggests
+  an `act()` fix alone may not suffice, and say to put the remaining options back to the human
+  rather than quietly adding a `testTimeout`.
+
+- **015-ci-test-timeout spec/plan/tasks written** (`specs/015-ci-test-timeout/`), status flipped
+  to `spec_ready`. Zero `[NEEDS CLARIFICATION]` markers — re-verified the kickoff findings live
+  rather than trusting them (confirmed 630/630 local, no jest setup file, no `testTimeout`,
+  `@expo/vector-icons` unmocked) and found one thing the kickoff brief didn't have: the
+  `act()` warnings are real and repo-wide but do NOT occur inside `LoginScreen.test.tsx`'s own
+  suite (its import tree has no `@expo/vector-icons` import) — so the causal link to that suite's
+  specific timeout is indirect at best, reinforcing why the spec requires empirical CI proof
+  rather than trusting the `act()` fix on reasoning alone. **The hard planning problem (how 015's
+  own PR gets a real CI check before 014 has merged `.github/workflows/ci.yml` to `main`) is
+  resolved in `plan.md`: recommends Option (c)** — cut 015 cleanly from `main`, gather real
+  `ubuntu-latest` evidence via a disposable throwaway branch/PR that cherry-picks 014's two
+  workflow commits, record the measured numbers, then close it unmerged — preserves both "real
+  evidence" and the human's settled "015 merges before 014" order. Does NOT recommend (d)
+  (merging 014 first); that's named as a fallback-only question for the human if (c) is declined,
+  not assumed. Fix mechanism: a new `jest.setup.ts` mocking `expo-font`'s `isLoaded()` to always
+  return `true` (read `@expo/vector-icons`' source directly — this short-circuits the async
+  `setState` for every icon family with one small mock). `tasks.md`'s T008 is the load-bearing
+  task: evaluate the real CI-measured duration against a 3000ms margin and **stop/escalate to the
+  human, not add `testTimeout`**, if it isn't met (FR-006) — also measures
+  `CrearCuentaScreen.test.tsx` (FR-007/SC-004) since the kickoff brief names it as the likely next
+  victim. **Awaiting human approval at the `spec_ready` gate** — should specifically confirm the
+  Option (c) throwaway-PR recommendation, since executing it needs real-time authorization
+  regardless of this plan's recommendation.
+
+- **Dispatched `spec-writer` for 015-ci-test-timeout** → `spec_ready`, zero
+  `[NEEDS CLARIFICATION]` markers. `specs/015-ci-test-timeout/` (spec.md 328 lines, plan.md 317,
+  tasks.md 241 + checklist): 8 FRs, 2 user stories, 13 tasks.
+  - **Fix approach (T002/T003)**: a new root `jest.setup.ts` mocking `expo-font`'s `isLoaded` so
+    `@expo/vector-icons` renders synchronously instead of `setState`-ing after an await, wired in
+    via `jest.config.js`'s `setupFiles`. Central and repo-wide (FR-004), not a per-test patch.
+  - **FR-006 encodes the escape hatch I asked for**: if real CI evidence shows the first test still
+    exceeds the threshold, the feature goes back to the human rather than quietly adding a
+    `testTimeout`. No `testTimeout` fallback is pre-authorized.
+  - **FR-007** requires checking `CrearCuentaScreen.test.tsx` (the named next-victim suite) too, so
+    the systemic risk is addressed rather than just this one test.
+  - **CI-evidence mechanism: chose Option (c)** — a short-lived throwaway branch/PR that
+    cherry-picks 014's workflow onto the fix purely to obtain a real `ubuntu-latest` run, then is
+    closed unmerged and deleted, with the measured numbers copied into
+    `progress/impl_015-ci-test-timeout.md` first so the evidence survives the branch. This keeps
+    015's own diff clean AND preserves the human's settled merge order (015 before 014's #9).
+    Options (a) and (b) were rejected (collapses the two features; requires history rewriting the
+    `feature-branch` skill forbids). Option (d) — merge #9 first despite its red check — is
+    correctly recorded as the fallback to ASK the human about, not to assume.
+  - T006 (push + open throwaway PR) and T010 (close it) are explicitly marked as requiring human
+    authorization at the time.
+
 ## Next step
 
-**Agent-side work on 014 is complete: 5 of 9 tasks done, each independently APPROVED.** Status
-stays `in_progress` — NOT `done` — because the four remaining tasks all need the human and none
-can be completed by an agent:
+**014 is blocked on 015, not finished and not failed.** The workflow itself is built, reviewed, and
+proven working on real runners; only its own PR going green is outstanding, and that depends on 015.
 
-1. **T003** — commit 014's files, push the branch, open the PR against `main`, then observe on that
-   PR: a real pass; a real fail from a deliberately broken commit, with the log correctly naming
-   the broken stage; and a return to passing after reverting. This is the workflow's first real
-   execution (FR-009). Requires explicit human authorization to push/open a PR.
-2. **T004** — while that PR is open, confirm zero GitHub Actions secrets exist for the repo.
-3. **T006** — after the PR merges, confirm the `push`-triggered run fired against the new `main`
-   commit.
-4. **T007** — HUMAN-ONLY: Settings → Branches → require status checks → select `CI / verify`.
+The unblock sequence, in order:
 
-When committing, stage 014's files explicitly — the tree also holds `specs/012-home-visual-alignment/`
-and the 011/012/013 registrations in `feature_list.json`. Never `git add -A` on this branch.
+1. **015-ci-test-timeout** — spec it (it's `pending`, so it needs the `spec-writer` → human-approval
+   gate first), fix the `LoginScreen` timeout, merge its own PR. Note at plan time: 015's branch cut
+   from `main` will NOT contain `.github/workflows/ci.yml` unless 014 has merged first, so decide
+   deliberately how 015's own PR gets a CI check — a green local run proves nothing here, since the
+   bug is already green locally.
+2. Update the `014-continuous-integration` branch, confirm the `CI / verify` check on
+   [PR #9](https://github.com/LeonardoALopezR/Draw-a-card-front/pull/9) goes **green** → finishes T003.
+3. **T004** — confirm zero Actions secrets exist in repo Settings (already strongly evidenced: the
+   run needs none).
+4. Merge #9 → then **T006** (confirm the `push`-triggered run fires against the new `main` commit).
+5. **T007** — HUMAN-ONLY: Settings → Branches → require status checks → select `CI / verify`.
+   **Do not enable this until #9's check is green**, or it will block every merge.
+
+Uncommitted and deliberately left alone: `jest.config.js` (the sibling session's worktree fix).
 
 Also still parked: **012-home-visual-alignment** remains `spec_ready` at its own approval gate,
-untouched by this session.
+untouched by this session — though its spec docs are now on the 014 branch via `4e2ee8c`.
