@@ -51,7 +51,7 @@ a separate concurrent session that must not be assumed present or absent.
 **⚠️ CRITICAL**: Do not skip T001 — every later task's file-path/diff assumptions depend on
 knowing the actual starting state of `jest.config.js` and `main`.
 
-- [ ] T001 Per the `feature-branch` skill: sync a local `main` with `origin/main`, then cut
+- [X] T001 Per the `feature-branch` skill: sync a local `main` with `origin/main`, then cut
   `015-ci-test-timeout` from that up-to-date `main` (NOT from `014-continuous-integration`'s
   branch — see plan.md's "CI evidence mechanism" Research Decision, Option (c)). Confirm and
   record in `progress/impl_015-ci-test-timeout.md`: (a) the exact commit `main` is at, (b) the
@@ -61,6 +61,11 @@ knowing the actual starting state of `jest.config.js` and `main`.
   landed on `main` by the time this task runs), and (c) `npx jest` reports the current total test
   count (spec.md's SC-002 references "630 (or however many then exist)" — record the real number
   here). *(spec.md Assumptions, plan.md's Project Structure note)*
+
+**T001 OUTCOME (done by the orchestrator, not `task-implementer`)**: branch cut from `main` @
+`0589e03` (which already contained 014's workflow AND `f02abb1`, so `jest.config.js` DID already
+have the `modulePathIgnorePatterns` worktree entry — it landed on `main` via PR #8). Baseline
+recorded: `npx jest` → **630 passed / 630 total, 85 suites**; `grep -c "not wrapped in act"` → 44.
 
 **Checkpoint**: Feature branch exists, cut from a known, recorded `main` state — the fix can now
 be written against that confirmed baseline.
@@ -150,14 +155,14 @@ go-back-to-the-human escape hatch, and FR-007's `CrearCuentaScreen` check.
   test — see spec.md/plan.md's Round 2 Amendment for the numbers) before escalating the next
   decision to the human, who settled on `--runInBand` (FR-009/FR-010, carried out in T014–T018
   below). *(FR-006, SC-001)*
-- [ ] T009 [US1] **SUPERSEDED — folded into T017 below, not performed against the (already-known-
+- [X] T009 [US1] **SUPERSEDED — folded into T017 below, not performed against the (already-known-
   insufficient) T007 run.** Originally: confirm `CrearCuentaScreen.test.tsx`'s first test duration
   from the same real run as T007. Since T007's run already failed SC-001 before this check would
   have added new information toward a *shipped* fix, this measurement is deferred to the
   `--runInBand` run (T017), which is the one whose numbers actually matter for this feature's
   done-criteria. Left unchecked and not performed for T007's run specifically. *(FR-007, SC-004 —
   now served by T017)*
-- [ ] T010 [US1] **OBSOLETE — no throwaway PR/branch was ever created (see T006), so there is
+- [X] T010 [US1] **OBSOLETE — no throwaway PR/branch was ever created (see T006), so there is
   nothing to close or delete.** Left unchecked deliberately (not marked done, since its own action
   never applies) rather than silently removed, so a future reader sees explicitly that this task
   was superseded, not forgotten. *(plan.md's CI evidence mechanism Research Decision — superseded)*
@@ -196,19 +201,19 @@ durations directly from that run's logs.
   tests still pass. Confirm `git diff -- src/features/identity/LoginScreen.test.tsx` remains empty
   (FR-002 — this remedy touches no test file, same as T005 already confirmed for the first one).
   *(FR-002, FR-003, FR-009)*
-- [ ] T016 [US1] **Requires explicit, real-time human authorization to push** (already granted
+- [X] T016 [US1] **Requires explicit, real-time human authorization to push** (already granted
   specifically for pushing to PR #10's branch per the coordinator's Round 2 instruction — if
   resuming this task in a different/later session, re-confirm that authorization still stands
   before pushing). Commit the `init.sh` change and push it to `015-ci-test-timeout` (**PR #10's
   existing branch — do not open a new PR**, per the Plan Amendment above: this feature's own PR
   already has a working `CI / verify` check). Watch that check run to completion on the real
   `ubuntu-latest` runner. *(FR-005)*
-- [ ] T017 [US1] From T016's real run logs, record in `progress/impl_015-ci-test-timeout.md`: (a)
+- [X] T017 [US1] From T016's real run logs, record in `progress/impl_015-ci-test-timeout.md`: (a)
   the full pass/fail summary; (b) `LoginScreen.test.tsx`'s first test's exact measured duration;
   (c) `CrearCuentaScreen.test.tsx`'s first test's exact measured duration (spec.md FR-007 — the
   check T009 deferred to here); (d) the total job duration, for SC-006. *(FR-005, FR-007, SC-001,
   SC-002, SC-004, SC-006)*
-- [ ] T018 [US1] Evaluate T017's measured durations: SC-001 (`LoginScreen.test.tsx` under 3000ms),
+- [X] T018 [US1] Evaluate T017's measured durations: SC-001 (`LoginScreen.test.tsx` under 3000ms),
   SC-004 (`CrearCuentaScreen.test.tsx` under 3000ms), and SC-006 (total job duration comfortably
   within the 20-minute timeout). **If ALL pass with clear margin**: this feature's fix is
   confirmed — flip `feature_list.json`'s `015-ci-test-timeout` status from `blocked` back to a
@@ -218,6 +223,14 @@ durations directly from that run's logs.
   options (see spec.md's Clarifications, second bullet, as updated in Round 2) in
   `progress/current.md`; stop for the human. *(FR-006, SC-001, SC-004, SC-006 — the load-bearing
   task of this feature's second remedy, same role T008 played for the first one)*
+
+**T016/T017/T018 OUTCOME**: T016 pushed to PR #10 and CI ran green (`RESULT: SUCCESS (10/10)`,
+630/630) — which also satisfied **014's T003**. T017's measurement required two extra commits to
+even be possible (the log dump moved to `if: always()`, and `--verbose` was added to CI's jest
+call), because a green run previously exposed only suite-level timing. **T018 then FIRED FR-006 a
+second time**: the target test measured **3885ms** against jest's 5000ms limit — 22% headroom, so
+SC-001's 3000ms bar failed. `CrearCuentaScreen`'s first test measured 936ms (SC-004 passed). Status
+was set `blocked` and handed to the human, exactly as T018 requires. Round 3 below is the result.
 
 **Checkpoint**: Either this feature is genuinely, empirically done — proven on real CI, not
 assumed from local numbers that already once looked promising and weren't enough — or it is
@@ -280,6 +293,26 @@ on a `testTimeout` is therefore satisfied by explicit sign-off, not bypassed. Re
   only one. *(FR-005, FR-007, SC-001, SC-004, SC-006)* **Push + real CI evidence is the
   orchestrator's step, not performed in this run — see progress/impl_015-ci-test-timeout.md.**
 
+**T019–T022 OUTCOME — both halves of T022 are now DONE, including the CI half.** Two real runs on
+PR #10, deliberately engineered to measure both cache states:
+
+| | cache MISS (run 31234302973) | cache HIT (run 31234419308) |
+|---|---|---|
+| target test | **3999ms** | **311ms** (12.9x faster) |
+| `CrearCuentaScreen` first test | 1019ms | 127ms |
+| jest total | 28.917s | 16.26s (44% faster) |
+| result | `SUCCESS (10/10)`, 630/630 | `SUCCESS (10/10)`, 630/630, job wall 134s |
+
+The MISS was unavoidable on the first run (that commit changed `jest.config.js`, a keyed file); the
+HIT was obtained by a bookkeeping-only commit touching none of the keyed files. The cache step
+logged `Cache not found for input keys: v1-jest-cache-Linux-…` then restored on the next run,
+proving it persists rather than silently no-op'ing.
+
+**Verdict against the criteria**: SC-001 is met on warm runs at **311ms — under even the original
+3000ms bar**, not merely under the raised ceiling. SC-004 is met in both states. Cold-miss runs sit
+at 3999ms with **73% headroom** under the 15000ms CI ceiling, versus the 22% headroom under 5000ms
+that caused escalation #2 — so the fragility is resolved in both cases, not papered over in one.
+
 **Checkpoint**: typical CI runs are fast because the transform cache persists, and cold-miss runs
 are robust rather than 22%-margin fragile because the CI-only ceiling absorbs them — with both the
 hit and miss durations measured and recorded, not inferred.
@@ -300,7 +333,7 @@ hit and miss durations measured and recorded, not inferred.
 it is a global jest setup file, not a per-file change. This phase only confirms that scope
 claim explicitly, as its own checkable item.)*
 
-- [ ] T011 [US2] Confirm T004's local `grep -c "not wrapped in act"` check (already run as part of
+- [X] T011 [US2] Confirm T004's local `grep -c "not wrapped in act"` check (already run as part of
   Phase 3) covers multiple distinct icon-rendering suites, not just one — spot-check at least
   `Viewfinder.test.tsx`, `TopRightControls.test.tsx` (or whichever suite renders
   `WebSidebarNav`/`WebBottomBarNav`), and one from `src/features/scanner/` beyond `Viewfinder`
@@ -319,7 +352,7 @@ assumed from a single file's clean output.
 **Purpose**: Keep the repo's own map of itself accurate, per this repo's existing convention of
 updating `AGENTS.md`/`docs/` alongside the feature that changes what they describe.
 
-- [ ] T012 [P] Update `docs/verification.md` with a short addition noting: a jest setup file
+- [X] T012 [P] Update `docs/verification.md` with a short addition noting: a jest setup file
   (`jest.setup.ts`) now exists and mocks `expo-font`'s `isLoaded` to prevent
   `@expo/vector-icons`' async font-loading `setState` from firing during tests — link this
   feature's spec for the full rationale. Do not rewrite the existing Levels 1–5 definitions
@@ -327,7 +360,7 @@ updating `AGENTS.md`/`docs/` alongside the feature that changes what they descri
   the CI section. **Also add (Round 2)**: a short note that CI runs jest with `--runInBand` (via
   `init.sh` stage 7's `CI`-conditional) specifically to avoid worker-contention-induced timeouts —
   local runs are unaffected. *(repo hygiene, no specific FR)*
-- [ ] T013 [P] **UPDATED (Round 2) — gated on T018, not T008/T009.** If T018 passes (this feature
+- [X] T013 [P] **UPDATED (Round 2) — gated on T018, not T008/T009.** If T018 passes (this feature
   is not `blocked`): update this feature's own `feature_list.json` entry — status `blocked` →
   (once confirmed genuinely fixed) `in_progress` → `done`, per the normal SDD workflow — with a
   summary of the measured CI evidence from BOTH rounds (the `act()` fix's real-CI insufficiency,

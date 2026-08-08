@@ -591,3 +591,42 @@ reason this is stated as a genuine open question, not assumed favorable.
   cache-hit/miss status and measured durations, evaluate against SC-001/SC-004/SC-006) is
   **outstanding** and is explicitly the orchestrator's step, not performed in this run — see
   "What this run does NOT and cannot establish" above.
+
+---
+
+## Round 3 CI evidence (recorded by the orchestrator, closing T017/T022's CI half)
+
+Two real `ubuntu-latest` runs on PR #10, deliberately engineered to measure both cache states.
+The MISS was unavoidable on the first Round 3 run (that commit changed `jest.config.js`, one of the
+`actions/cache` key inputs); the HIT was obtained with a bookkeeping-only commit that touched none
+of the keyed files.
+
+| | cache MISS — run 31234302973 | cache HIT — run 31234419308 |
+|---|---|---|
+| `LoginScreen` target test (SC-001) | **3999ms** | **311ms** (12.9x faster) |
+| `CrearCuentaScreen` first test (SC-004) | 1019ms | 127ms (8x faster) |
+| jest total | 28.917s | 16.26s (44% faster) |
+| suite result | 630/630, 85 suites | 630/630, 85 suites |
+| `init.sh` | `RESULT: SUCCESS (10/10 stages passed)` | `RESULT: SUCCESS (10/10 stages passed)` |
+| job wall | — | 134s (vs. a 20-minute timeout) |
+
+The cache step logged `Cache not found for input keys: v1-jest-cache-Linux-…` on the MISS run and
+restored successfully on the HIT run, which is what proves the cache genuinely persists rather than
+silently no-op'ing.
+
+**Evaluation.** SC-001: met — 311ms warm is under even the *original* 3000ms bar, not merely under
+the raised ceiling. SC-004: met in both states. SC-006: met with wide margin. The cold-miss case at
+3999ms carries 73% headroom under the 15000ms CI ceiling, versus the 22% headroom under 5000ms that
+caused FR-006 escalation #2 — the fragility is resolved in both states, not papered over in one.
+
+**Prior-round history, so the dead ends aren't retried.** Round 1 (`expo-font` `isLoaded` mock):
+real win — 44 `act()` warnings → 0, −16% local test time — but did not move the timeout
+(311ms → 308ms). Round 2 (`--runInBand`): real contributor (69ms @ 1 worker vs 308ms @ 13 locally),
+kept, but only reached 3885ms of 5000ms. Round 3 (transform cache): the dominant term.
+Eliminated by measurement: setup-file module warming (impossible from `setupFiles`; from
+`setupFilesAfterEnv` it doubled total test time to 20173ms and slowed the target test to 432ms) and
+a canary test (imports evaluate at module load, outside any test's clock).
+
+**Method note.** Suite-level timing hid this: from a 6.759s suite total the target test was inferred
+at ~600–700ms when it was actually 3885ms — wrong by ~6x. Switching the workflow's log dump to
+`if: always()` and adding `--verbose` to CI's jest call is what made the real number visible.

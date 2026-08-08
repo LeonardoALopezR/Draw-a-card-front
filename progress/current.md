@@ -220,14 +220,28 @@ FR-006 (2026-08-07: the human chose (a) cache + (c) scoped timeout), NOT a bypas
 CI only — `jest.config.js` deliberately keeps jest's strict 5000ms default so a genuinely slow test
 still fails fast in development.
 
+### Resolved since
+
+- **Cache HIT run obtained and measured** (run 31234419308): target test **311ms** warm vs **3999ms**
+  on a miss (12.9x), `CrearCuentaScreen` first test 127ms vs 1019ms, jest total 16.26s vs 28.917s,
+  630/630, `SUCCESS (10/10)`, job wall 134s. The cache step logged a miss then restored — it genuinely
+  persists. **SC-001 is met at 311ms, under even the original 3000ms bar**; cold-miss runs carry 73%
+  headroom under the 15000ms ceiling (vs 22% under 5000ms before).
+- **Round 3 re-reviewed.** `code-reviewer` verified the mechanism independently — including pulling
+  the GitHub Actions logs itself rather than trusting quoted numbers — and found the transform-cache
+  key safe against false greens (jest keys cached entries by source content plus resolved transform
+  options, so a `restore-keys` partial match is only a warm start, never blind trust), the
+  `--testTimeout` correctly CI-scoped, and every hard constraint intact. It returned
+  CHANGES_REQUESTED purely on traceability closure, all of which is now done: `spec.md`/`plan.md`
+  carry a Round 3 Amendment (including a new FR-010 documenting the CI/local sensitivity asymmetry
+  the reviewer wanted written down), `tasks.md`'s checkbox/prose mismatches are reconciled with
+  outcome blocks (**0 unchecked tasks remain**), the real MISS/HIT numbers are appended to
+  `progress/impl_015-ci-test-timeout.md`, `docs/verification.md` is updated (T012), and
+  `feature_list.json` is committed rather than left uncommitted.
+
 ### Outstanding
 
-1. **A cache-HIT CI run** to prove the transform cache actually persists and to record the warm
-   duration. Run A was necessarily a MISS because it changed `jest.config.js` (a keyed file).
-2. **Re-review**: `code-reviewer` returned CHANGES_REQUESTED earlier; its blocking finding (real
-   per-test CI evidence unrecorded/unrecoverable) is now closed by measurement, but the Round 3
-   changes have not been reviewed.
-3. **Merge decisions (human)**: whether to merge PR #10, and 014's remaining T007.
+1. **Merge decisions (human)**: whether to merge PR #10, and 014's remaining T007.
 4. **T007 — HUMAN-ONLY branch protection.** Now much safer to enable than before: the check is
    green and the margin is no longer 22%. Still the human's action; an agent cannot do it.
 5. 014's `tasks.md` boxes for T003/T004/T006 are satisfied in substance (green run observed; zero

@@ -463,3 +463,68 @@ verified — see `progress/impl_015-ci-test-timeout.md`'s Run 1. What remains:
 ## Complexity Tracking
 
 *No Constitution Check violations — table intentionally empty.*
+
+
+---
+
+## Round 3 Amendment (2026-08-07) — cold jest transform cache, and the human-authorized ceiling
+
+**Supersedes Round 1's and Round 2's root-cause claims.** Both were real contributors, both are
+kept, neither was the dominant term.
+
+| Round | Hypothesis | Outcome |
+|---|---|---|
+| 1 | `@expo/vector-icons` async font load driving un-`act()`ed `setState` | Real win — 44 `act()` warnings → 0, −16% local test time — but **did not fix the timeout** (311ms → 308ms locally). FR-001's original premise was falsified by CI. |
+| 2 | jest worker-pool oversubscription / CPU starvation | Real contributor (69ms @ 1 worker vs 308ms @ 13 locally). `--runInBand` kept. Got CI to 3885ms of 5000ms — **22% headroom, SC-001 failed**, triggering FR-006 escalation #2. |
+| 3 | **Cold jest transform cache** | **Dominant term.** Local, same test, `--runInBand` throughout, only cache state varying: warm **147ms** → `npx jest --clearCache` → **1666ms** (11x) → warm **146ms**. |
+
+**Eliminated by measurement — do not retry.** Warming the module graph in a setup file: impossible
+from `setupFiles` (`ReferenceError: expect is not defined`, since `@testing-library/react-native`
+needs `expect` at import time); from `setupFilesAfterEnv` it *doubled* total local test time
+(9363ms → 20173ms) and *slowed* the target test (308ms → 432ms), because setup runs once per test
+file against a fresh module registry. A cheap canary test: top-level `import`s evaluate at module
+load, outside any test's 5000ms clock, so there was never import cost for a canary to absorb — a
+canary could only absorb it by rendering, making the canary the thing that times out.
+
+### FR-006 status: satisfied by explicit sign-off, not bypassed
+
+FR-006 forbade a `testTimeout` as a *silent* fallback and required escalation instead. It escalated
+**twice** (T008, T018) and the human was handed measured numbers both times. On 2026-08-07 the human
+chose **(a) cache the transform output + (c) a scoped `testTimeout`**. That sign-off is the
+authorization FR-006 demanded; the flag is dated, named, and justified in `init.sh`'s comment, in
+`tasks.md`'s Phase 3c header, and in `feature_list.json`'s notes.
+
+### SC-001 / SC-004: met, with both cache states measured
+
+| | cache MISS (run 31234302973) | cache HIT (run 31234419308) |
+|---|---|---|
+| target test | **3999ms** | **311ms** |
+| `CrearCuentaScreen` first test | 1019ms | 127ms |
+| jest total | 28.917s | 16.26s |
+
+SC-001 is met on warm runs at 311ms — under even the original 3000ms bar. Cold-miss runs sit at
+3999ms with 73% headroom under the 15000ms CI ceiling (vs. 22% under 5000ms before). SC-006 holds
+easily: job wall 134–158s against a 20-minute timeout.
+
+### FR-010 (new) — the CI/local sensitivity asymmetry, stated rather than left implicit
+
+`--testTimeout` is a jest CLI flag, not a per-file setting, so the CI ceiling necessarily applies to
+**all 630 tests**, not only the two "first test in a heavy suite" victims. A per-file
+`jest.setTimeout` was not available: it would require editing
+`src/features/identity/LoginScreen.test.tsx`, which FR-002 forbids.
+
+The accepted, bounded consequence: **CI is now less sensitive than local development to a moderate
+performance regression.** A test that regressed from ~150ms to ~4500ms would pass CI (far under
+15000ms) while a developer would see it near jest's local 5000ms limit. This is accepted because the
+ceiling is anchored to the measured cold worst case (3999ms → 15000ms, ~3.75x) rather than picked
+arbitrarily large, and because local runs deliberately keep the strict 5000ms default precisely so
+that development remains the tighter gate. Anyone raising this ceiling further should re-measure
+first and record why.
+
+### Method note worth keeping
+
+Suite-level timing actively hid this bug. From `LoginScreen.test.tsx`'s 6.759s suite total the
+target test was inferred at ~600–700ms; it was 3885ms — wrong by ~6x — and that inference would
+have shipped a 22%-margin check as "fixed". What exposed it: moving the workflow's log dump to
+`if: always()` and adding `--verbose` to CI's jest call. Both stay, and both remain useful for any
+future CI timing regression.
