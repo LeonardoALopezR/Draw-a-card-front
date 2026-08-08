@@ -25,6 +25,21 @@ machine. The two pre-existing `WARN`-graded issues (`expo-doctor`'s outdated-dep
 findings; native dependency version drift) are expected to appear there too and do not fail the
 build, matching `init.sh`'s own WARN-is-not-FAIL grading exactly.
 
+**How CI runs the suite, and why it differs from your local run** (015-ci-test-timeout): in CI only
+(`CI=true`, which GitHub Actions sets automatically), `init.sh` runs jest with `--runInBand`
+(single worker — a shared runner's 2-4 vCPUs oversubscribe badly enough that CPU contention alone
+inflated a 69ms test to 3885ms), `--verbose` (so per-test durations are readable off a *passing*
+run, not just a failing one), and `--testTimeout=15000`. The raised ceiling exists to absorb one
+unavoidable cost: a cold babel transform cache, which measured 11x on the first `render()` of a
+heavy screen (warm 147ms vs. cleared 1666ms locally). The workflow persists jest's transform cache
+(`.jest-cache`, gitignored) via `actions/cache`, so a typical run is warm — the same test measures
+**311ms warm vs. 3999ms on a cache miss** on a real runner.
+
+Your **local** run deliberately keeps jest's strict 5000ms default and full parallelism. That
+asymmetry is intentional: development stays the tighter gate for test performance. The tradeoff is
+that CI will not flag a moderate slowdown as early as your local run does — if you raise that
+ceiling, measure first and record why (see `specs/015-ci-test-timeout/spec.md`'s Round 3 Amendment).
+
 CI existing is not the same as CI being *required*: enabling branch protection on `main` to
 require the `CI / verify` check before merge is a separate, human-only action
 (`specs/014-continuous-integration/tasks.md` T007) that is **not yet enabled** as of this

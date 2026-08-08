@@ -204,10 +204,39 @@ fi
 
 # ---------------------------------------------------------------------------
 log "7/8 Running test suite"
+# In CI (GitHub Actions sets CI=true automatically for every workflow step — no workflow-file
+# edit needed), jest's default worker pool oversubscribes the runner's 2-4 vCPUs badly enough
+# that cross-test/cross-suite CPU contention alone pushes an otherwise-fast test past jest's
+# 5000ms per-test timeout (measured: the same test 69ms at --maxWorkers=1 vs 308ms at jest's
+# local default of 13 workers on a 14-core dev machine — see specs/015-ci-test-timeout/spec.md's
+# Round 2 Amendment). --runInBand (a single worker, zero contention by construction) eliminates
+# that root cause. Scoped to CI only — jest.config.js intentionally does NOT set this, so a
+# developer's local run stays fully parallel and unaffected (specs/015-ci-test-timeout FR-009).
+#
+# Round 3: --runInBand alone still wasn't enough — CI's jest transform cache
+# (jest.config.js's cacheDirectory) is cold on a fresh runner even with actions/cache doing its
+# best (a MISS still pays the full cost), and a cold-cache run measured 3885ms against jest's
+# 5000ms default, only 22% headroom. --testTimeout=15000 (CI only, well over the measured 3885ms
+# cold-cache worst case) absorbs that unavoidable one-time cost. This is a deliberate,
+# human-authorized exception to this feature's own FR-006 (2026-08-07 sign-off: the human chose
+# options (a) [cache the transform, see .github/workflows/ci.yml] + (c) [this scoped
+# --testTimeout] together) — NOT a bypass, and NOT a license to let a genuinely slow test hide:
+# jest.config.js deliberately does NOT get this override, so a developer's local run keeps
+# jest's strict 5000ms default and a genuinely slow test still fails fast in development.
 if [ "$SKIP_TESTS" = true ]; then
   add_result "Tests" "WARN" "skipped (--skip-tests)"
 elif ! node -e 'process.exit(require("./package.json").scripts?.test ? 0 : 1)' 2>/dev/null; then
   add_result "Tests" "WARN" "no \"test\" script in package.json yet — set up a test runner (e.g. jest + @testing-library/react-native) when the first feature needs one, per docs/verification.md"
+elif [ "${CI:-}" = "true" ]; then
+  # --verbose emits each test's own duration ("✓ name (148 ms)"), which is what makes a per-test
+  # timeout regression measurable from a PASSING CI run rather than only inferable from the
+  # suite total. The extra lines are cheap here: this output goes to the log file below, which
+  # the workflow prints inside a collapsed ::group::, so it costs a reader nothing unopened.
+  if npm test -- --runInBand --verbose --testTimeout=15000 >/tmp/init-sh-front-tests.log 2>&1; then
+    add_result "Tests" "OK" "all tests passed (--runInBand, CI=true)"
+  else
+    add_result "Tests" "FAIL" "see /tmp/init-sh-front-tests.log: $(tail -n 8 /tmp/init-sh-front-tests.log | tr '\n' ' ')"
+  fi
 elif npm test >/tmp/init-sh-front-tests.log 2>&1; then
   add_result "Tests" "OK" "all tests passed"
 else
