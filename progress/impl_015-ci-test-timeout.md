@@ -344,3 +344,250 @@ fix) and were not. What this run establishes, precisely:
 - T016–T018: **not started** — requires explicit, real-time human authorization to push to
   PR #10's branch and watch its real `CI / verify` run; per this run's own brief, that's the
   orchestrator's job, not this run's.
+
+## Run 3 — 2026-08-07 (T019, T020, T021, T022's LOCAL half only)
+
+Scope for this run: **T019, T020, T021, and T022's local verification half only**, per explicit
+instruction. T022's CI half (push to PR #10's branch, read the real run) is the orchestrator's
+job, not attempted here — no `gh` command that creates/modifies anything on GitHub was run.
+T016–T018's real-CI outcome (CI green, `RESULT: SUCCESS (10/10)`, 630/630, job 140s; T018 fired
+FR-006 a second time — the target test measured 3885ms against jest's 5000ms limit, 22%
+headroom, failing SC-001; `CrearCuentaScreen`'s first test measured 936ms, passing SC-004) and
+the human's sign-off on options (a)+(c) were already recorded in `tasks.md`'s Phase 3c section
+before this run started — treated as settled context per this run's own brief, not re-derived.
+
+Read first, as instructed: `tasks.md`'s Phase 3c (T019–T022) in full including its context
+block, `spec.md`'s FR-002/FR-003/FR-005/FR-006/FR-007 and SC-001/SC-004/SC-006, `plan.md`,
+`.specify/memory/constitution.md`, `docs/conventions.md`.
+
+### Files changed
+
+- **`jest.config.js`** — additive-only: added `cacheDirectory: "<rootDir>/.jest-cache"` (T019)
+  with a comment stating the design rationale (single source of truth for the cache-directory
+  path, read by `.github/workflows/ci.yml`'s `actions/cache` step rather than duplicated),
+  the measured warm-vs-cold numbers from `tasks.md`'s context block (147ms → 1666ms, 11x), the
+  benign one-time local side effect (a developer's next run after pulling this change rebuilds
+  the cache once, since it moves off jest's default OS-tmpdir location), and confirmation this
+  is a plain non-test data directory, not a haste-map/test root (it holds no `*.test.ts(x)`
+  files or `__tests__` directories, so jest's own `testMatch` defaults already exclude it — no
+  extra `testPathIgnorePatterns` needed). Every pre-existing key (`preset`, `moduleNameMapper`,
+  `modulePathIgnorePatterns`, `setupFiles`) is untouched.
+
+- **`.gitignore`** — added a `.jest-cache/` entry (T019) with a short comment explaining it's a
+  local build artifact never committed; CI persists its own copy via `actions/cache` instead.
+  This is the file's first cache-related entry, as the task noted.
+
+- **`.github/workflows/ci.yml`** — added one `actions/cache@v4` step (T020), placed between the
+  existing `npm ci` step and the `./init.sh --skip-install` step (per the task's placement
+  requirement — "before the `./init.sh --skip-install` step"). Caches `.jest-cache` (matching
+  `jest.config.js`'s new `cacheDirectory`, no duplicated path string beyond this one `path:`
+  value, which necessarily has to name the directory once on the workflow side too). Key:
+  `v1-jest-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.js',
+  'jest.config.js') }}` — a hand-rotatable `v1` prefix plus the three files whose changes
+  actually invalidate a babel transform (lockfile = dependency versions, babel/jest config =
+  transform rules). `restore-keys: v1-jest-cache-${{ runner.os }}-` as a fallback so a lockfile
+  bump still gets a partial-match restore rather than a fully cold cache. The comment states
+  plainly, as required, that a cache MISS (first run, or any run after one of the keyed files
+  changes) still pays the full cold-cache cost — this step improves the common case, it does
+  not remove the worst case, which is why T021 exists too.
+
+- **`init.sh`** — additive-only edit to stage 7's `CI=true` branch (T021): added
+  `--testTimeout=15000` alongside the existing `--runInBand --verbose`, so the CI-only jest
+  invocation is now `npm test -- --runInBand --verbose --testTimeout=15000`. Added a comment
+  block explaining why (absorbing the measured 3885ms cold-cache worst case with real margin —
+  15000ms is ~3.9x that measurement), citing the human's 2026-08-07 sign-off on options (a)+(c)
+  explicitly and by name (not just "a decision was made" — the comment names the two chosen
+  options and cross-references `.github/workflows/ci.yml` for option (a)), and stating plainly
+  that this is a deliberate, authorized exception to this feature's own FR-006, not a bypass,
+  and not license for a genuinely slow test to hide — `jest.config.js` deliberately does NOT
+  get this override, so a developer's local run keeps jest's strict 5000ms default. No per-file
+  `jest.setTimeout` was added anywhere — `git diff --stat -- src/features/identity/
+  LoginScreen.test.tsx` is empty (confirmed below), satisfying the task's explicit prohibition
+  on touching that file. Every other part of stage 7 (the `SKIP_TESTS`/no-test-script branches,
+  the unflagged local `npm test` path, the log file path, every `add_result` call) is
+  byte-for-byte unchanged from Run 2.
+
+- **`specs/015-ci-test-timeout/tasks.md`** — T019, T020, T021 marked `[X]`. T022 marked `[X]`
+  with an explicit inline annotation ("LOCAL HALF DONE, CI HALF OUTSTANDING (owned by the
+  orchestrator)") plus a trailing note that the push + real CI evidence step was not performed
+  in this run — per this run's own instruction to mark T022 done only for its local half and
+  say explicitly the CI half is outstanding.
+
+No changes anywhere under `app/` or `src/`. `feature_list.json` and `progress/current.md` were
+not touched (orchestrator's bookkeeping, not mine to edit per this run's brief). No `git add`,
+commit, or push was performed — confirmed via `git status --porcelain` showing only working-tree
+modifications, no staged changes, and via not having run any `git commit`/`git push`/`gh` command
+in this session.
+
+### T019 — cacheDirectory, verified
+
+- `jest.config.js`'s `cacheDirectory` is `"<rootDir>/.jest-cache"`, the single place the path is
+  defined — `.github/workflows/ci.yml`'s `actions/cache` step reads/writes the same literal
+  directory name (`.jest-cache`, relative to the repo root, which is also `<rootDir>` since
+  `init.sh`/CI both invoke jest from the repo root) rather than re-deriving or hardcoding a
+  second copy of jest's own `<rootDir>`-relative resolution.
+- Confirmed jest actually uses the new location: after the config change, running `npm test`
+  created `/Users/leo/Desktop/DrawACard/Draw-a-card-front/.jest-cache/` (21M, containing a
+  `haste-map-*` file and a `jest-transform-cache-*` directory) rather than anything under the
+  OS temp directory. `npx jest --clearCache` reported `Cleared
+  /Users/leo/Desktop/DrawACard/Draw-a-card-front/.jest-cache` — jest itself confirms this is
+  now its cache location.
+- Confirmed jest does not treat `.jest-cache` as a test root or haste-map input: the full local
+  suite still reports exactly `85 passed, 85 total` / `630 passed, 630 total` (no phantom suites
+  picked up from the cache directory's own contents), and no new "Haste module naming collision"
+  or similar warning appeared in any run this session.
+- The one local side effect the task requires stating plainly: a developer pulling this change
+  moves their jest cache off its previous (OS-tmpdir-based) default location, so their very next
+  local run rebuilds the cache once — the same one-time cost as any brand-new checkout's first
+  run, and not observed to cause any failure, just a one-time slower run.
+
+### T020 — actions/cache step, verified for YAML validity
+
+- `pyyaml` is not installed (per this run's explicit constraint, not attempted). Verified the
+  workflow YAML is valid a different way: `node_modules` already has `js-yaml` installed
+  transitively, so `node -e "yaml.load(fs.readFileSync('.github/workflows/ci.yml'))"` was run
+  and it parsed the entire file cleanly, printing the fully-structured JSON equivalent (the new
+  `actions/cache@v4` step appears correctly nested as the 4th step, with `path`, `key`, and
+  `restore-keys` all present and correctly typed as strings) — no YAML syntax error anywhere in
+  the file after this edit.
+- Also manually re-read the resulting file end-to-end (see the diff in this report) to confirm
+  indentation, comment placement, and step ordering (`npm ci` → new cache step → `./init.sh
+  --skip-install` → dump-logs step) match the task's placement requirement exactly.
+- **What this run cannot verify**: whether the cache actually persists and produces a real HIT
+  on a second CI run — only real, paired CI runs (a MISS then a HIT) can confirm that, and that
+  is squarely the orchestrator's step (T022's CI half), not derivable from local YAML validation
+  or from any local jest run.
+
+### T021 — CI-only `--testTimeout=15000`, verified
+
+- `git diff -- init.sh` (see Files changed above) shows the CI-only jest invocation is now
+  `npm test -- --runInBand --verbose --testTimeout=15000`; the local, unflagged `npm test`
+  invocation two branches below it is completely untouched.
+- `grep -rn "testTimeout" jest.config.js jest.setup.ts init.sh package.json` → the only hits are
+  (a) a comment in `jest.config.js` referencing `--testTimeout` by name (not a config key — no
+  `testTimeout:` key exists anywhere in `jest.config.js`) and (b) the one CI-only flag in
+  `init.sh`. `package.json` has zero hits. Confirms `jest.config.js` was NOT given a
+  `testTimeout` key, satisfying the task's explicit "do NOT put `testTimeout` in `jest.config.js`"
+  constraint — a developer's local run keeps jest's strict 5000ms default.
+- `git diff --stat -- src/features/identity/LoginScreen.test.tsx` → empty. No per-file
+  `jest.setTimeout` was added to that or any other test file.
+
+### T022 — LOCAL half only (CI half is the orchestrator's, explicitly not attempted here)
+
+**(a) No `CI` env var — parallel path, no `--verbose`, default (5000ms) timeout, still green:**
+
+```
+$ unset CI; time npm test
+Test Suites: 85 passed, 85 total
+Tests:       630 passed, 630 total
+Time:        6.4 s
+npm test  60.69s user 9.25s system 935% cpu 7.476 total
+```
+
+935% cpu confirms multiple workers ran (the parallel path, unaffected by T021's CI-only flag).
+Output shows only `PASS <file>` lines per suite — no individual `✓ <test name> (N ms)` lines,
+confirming `--verbose` is NOT active on this path. No `--testTimeout` flag is present (jest's
+own default, 5000ms, governs) — consistent with `--testTimeout=15000` living only inside the
+`[ "${CI:-}" = "true" ]` branch T021 added.
+
+**(b) `CI=true` — reports `--runInBand`, passes:**
+
+```
+$ CI=true ./init.sh --skip-install --skip-build --skip-doctor --skip-native
+▶ 7/8 Running test suite
+✅ [OK] Tests: all tests passed (--runInBand, CI=true)
+RESULT: SUCCESS (8/8 stages passed)
+```
+
+`/tmp/init-sh-front-tests.log`'s own first line: `> jest --runInBand --verbose
+--testTimeout=15000` — confirms all three flags (including T021's new one) actually reached
+jest, not just `init.sh`'s own summary line. `grep -c "✓" /tmp/init-sh-front-tests.log` → `630`
+(every test's own `--verbose` line present). Tail: `Test Suites: 85 passed, 85 total / Tests:
+630 passed, 630 total / Time: 9.789 s`.
+
+**Also useful and cheap (explicitly called out as worth doing in this run's brief): target
+test's duration on a cleared cache vs. warm, to confirm the cache-directory move (T019) didn't
+break caching:**
+
+```
+$ CI=true npx jest src/features/identity/LoginScreen.test.tsx --runInBand --verbose   # warm
+✓ replaces SignInForm with the neutral 'Signing you in…' view... (158 ms)   Time: 1.035 s
+
+$ npx jest --clearCache
+Cleared /Users/leo/Desktop/DrawACard/Draw-a-card-front/.jest-cache
+
+$ CI=true npx jest src/features/identity/LoginScreen.test.tsx --runInBand --verbose   # cold
+✓ replaces SignInForm with the neutral 'Signing you in…' view... (1593 ms)   Time: 3.295 s
+
+$ CI=true npx jest src/features/identity/LoginScreen.test.tsx --runInBand --verbose   # re-warmed
+✓ replaces SignInForm with the neutral 'Signing you in…' view... (145 ms)   Time: 1.03 s
+```
+
+158ms warm → 1593ms cold (~10x) → 145ms re-warmed — closely matches the context block's own
+147ms/1666ms(11x)/146ms measurements, confirming the cache-directory move (default OS-tmpdir
+location → `<rootDir>/.jest-cache`) did not change the underlying warm/cold behavior, only its
+location. This is a **local** measurement only, using local wall-clock/CPU characteristics —
+it does not by itself establish the real CI numbers (3885ms cold on `ubuntu-latest` per T018,
+already recorded above); it only confirms the cache mechanism itself still functions correctly
+after T019's relocation.
+
+**`git diff --stat -- src/features/identity/LoginScreen.test.tsx`** → empty (reconfirmed a
+third time across this feature's three rounds of remedies, none of which have ever touched this
+file).
+
+**What this run does NOT and cannot establish** (stated plainly, per this run's own
+instruction): no local verification can confirm the CI cache (T020's `actions/cache` step)
+actually persists and produces a real HIT between two separate CI runs — that requires an
+actual pair of runs on `ubuntu-latest` (a MISS on the first run after this change merges/pushes,
+then a HIT on the next run that doesn't touch the keyed files), which only the orchestrator's
+push-and-watch step (T022's CI half) can produce. Likewise, whether the CI-only `--testTimeout`
+(T021) and the transform-cache HIT (T020) together bring `LoginScreen.test.tsx`'s first test
+under SC-001's margin, or merely under jest's ceiling without regressing SC-006's job-duration
+budget, is a real-CI question this run does not and cannot answer from local numbers alone — the
+whole premise of this feature's Round 2 (a locally-promising fix that failed on real CI) is the
+reason this is stated as a genuine open question, not assumed favorable.
+
+### Requirement traceability (this run's scope)
+
+| FR / SC | Covered by |
+|---|---|
+| FR-005 (fix's effectiveness confirmed empirically on real CI, not just reasoned locally) | T019/T020 implemented and locally sanity-checked (cache mechanism functions, YAML valid); the actual empirical confirmation is explicitly deferred to the orchestrator's T022 CI half, stated as such throughout this report |
+| FR-006 (no silent `testTimeout`; human sign-off required and present) | `init.sh`'s new comment cites the human's 2026-08-07 sign-off on options (a)+(c) by name; `jest.config.js` deliberately has no `testTimeout` key — only the CI-only `init.sh` flag exists |
+| FR-007 (`CrearCuentaScreen.test.tsx`'s duration also recorded) | Already recorded in T018 (936ms, SC-004 pass) per the context block; this run's own local checks focused on `LoginScreen.test.tsx` per T022's own text, `CrearCuentaScreen`'s real-CI re-measurement (if any, on the cache/timeout-affected run) is part of the orchestrator's outstanding CI half |
+| SC-001 (LoginScreen.test.tsx under 3000ms on real CI) | NOT established by this run — real CI evidence outstanding (orchestrator's step) |
+| SC-004 (CrearCuentaScreen.test.tsx under 3000ms on real CI) | NOT re-established by this run for the cache/timeout change specifically — outstanding |
+| SC-006 (total job duration comfortably within 20 minutes) | NOT re-established by this run — outstanding, though T017's prior measurement (job 140s) leaves very large headroom before this small, additive change |
+
+### Verification performed
+
+- `bash -n init.sh` → syntax OK.
+- `node_modules/.bin/tsc --noEmit` → clean, no type errors.
+- `node -e "require('js-yaml').load(fs.readFileSync('.github/workflows/ci.yml'))"` → parsed
+  cleanly, full structure printed, no syntax error.
+- `unset CI; npm test` → 630/630, 6.4s, 935% cpu (parallel, unaffected).
+- `CI=true ./init.sh --skip-install --skip-build --skip-doctor --skip-native` → `RESULT: SUCCESS
+  (8/8 stages passed)`; `/tmp/init-sh-front-tests.log` confirms `jest --runInBand --verbose
+  --testTimeout=15000` actually ran, 630/630.
+- `CI=true npx jest src/features/identity/LoginScreen.test.tsx --runInBand --verbose`, run warm,
+  then after `npx jest --clearCache`, then re-warmed: 158ms / 1593ms / 145ms — cache mechanism
+  confirmed still functioning after the T019 relocation.
+- `git diff --stat -- src/features/identity/LoginScreen.test.tsx` → empty.
+- `grep -rn "testTimeout" jest.config.js jest.setup.ts init.sh package.json` → only the intended
+  comment (jest.config.js) and the one CI-only flag (init.sh); no `testTimeout:` config key
+  anywhere, no per-file `jest.setTimeout`.
+- `git status --porcelain` reviewed before finishing — confirmed only the intended files
+  (`jest.config.js`, `.gitignore`, `.github/workflows/ci.yml`, `init.sh`,
+  `specs/015-ci-test-timeout/tasks.md`) plus pre-existing, not-mine changes
+  (`feature_list.json`, `progress/current.md` untouched by me;
+  `progress/review_015-ci-test-timeout.md` untracked and not created by me) are present. No
+  `git add`, `git commit`, `git push`, or any `gh` command was run.
+
+### Task status
+
+- [X] T019
+- [X] T020
+- [X] T021
+- [X] T022 — **local half only.** The CI half (push to PR #10's branch, read the real run's
+  cache-hit/miss status and measured durations, evaluate against SC-001/SC-004/SC-006) is
+  **outstanding** and is explicitly the orchestrator's step, not performed in this run — see
+  "What this run does NOT and cannot establish" above.

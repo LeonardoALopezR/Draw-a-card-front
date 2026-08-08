@@ -33,4 +33,19 @@ module.exports = {
   // module-registry mock, exactly what setupFiles (pre-test-framework) is for; there is no
   // observed functional difference for this specific fix.
   setupFiles: ["<rootDir>/jest.setup.ts"],
+  // specs/015-ci-test-timeout Round 3: give jest's babel transform cache a stable, project-
+  // relative home so CI can persist it across runs (see .github/workflows/ci.yml's
+  // actions/cache step, keyed on package-lock.json + babel.config.js + jest.config.js).
+  // Defined here, ONCE, rather than as a duplicated path string in the workflow — the workflow
+  // step reads this same "<rootDir>/.jest-cache" path. Measured locally (--runInBand throughout,
+  // only cache state varying): warm 147ms vs. a cleared cache 1666ms (11x) for the same test —
+  // CI's cache is always cold by default, which is the dominant cost T021's CI-only
+  // --testTimeout exists to absorb. One-time, benign local side effect: moving this off jest's
+  // default OS-tmpdir location means a developer's very next run after pulling this change
+  // rebuilds the cache once (same one-time cost as any first run ever); not a correctness issue,
+  // no cache content is checked in (see .gitignore). This is a plain non-test data directory —
+  // jest does not treat it as a haste-map/test root since it contains no *.test.ts(x) files or
+  // __tests__ directories, matching every other node_modules-adjacent directory already excluded
+  // from testMatch by jest's own defaults.
+  cacheDirectory: "<rootDir>/.jest-cache",
 };

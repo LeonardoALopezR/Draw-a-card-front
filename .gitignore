@@ -7,5 +7,9 @@ web-build/
 *.log
 .DS_Store
 
+# specs/015-ci-test-timeout: jest's babel transform cache (jest.config.js's cacheDirectory).
+# Local build artifact, never committed; CI persists its own copy via actions/cache instead.
+.jest-cache/
+
 # Agent folders may contain credentials/session artifacts — never commit
 .claude/settings.local.json

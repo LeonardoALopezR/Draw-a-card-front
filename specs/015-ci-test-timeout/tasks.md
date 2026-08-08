@@ -225,6 +225,67 @@ honestly `blocked` a second time with fresh numbers for the human, per T018.
 
 ---
 
+## Phase 3c: Round 3 — Cold jest transform cache (still User Story 1, still P1)
+
+**T016 and T017 are DONE** (pushed to PR #10; CI green, `RESULT: SUCCESS (10/10)`, 630/630, job
+140s — which also satisfied 014's T003). **T018 FIRED FR-006 a second time**: the measured
+duration was **3885ms** against jest's 5000ms limit, so SC-001's 3000ms bar is NOT met — only 22%
+headroom, the same "future flake" condition that ruled out `--maxWorkers=2`. `CrearCuentaScreen`'s
+first test measured 936ms (SC-004 passes). Those numbers were only obtainable because the log dump
+was switched to `if: always()` and `--verbose` was added to the CI-only jest call.
+
+**Root cause, corrected a second time — cold jest transform cache.** Measured locally, same test,
+`--runInBand` throughout, only cache state varying: warm **147ms** → `npx jest --clearCache` →
+**1666ms** (11x) → warm again **146ms**. CI's cache is always cold, so every run babel-transforms
+the React Native module graph the first time a `render()` triggers its lazy requires. Worker
+contention (Round 2) was a real contributor and `--runInBand` stays, but this is the dominant term.
+
+**HUMAN SIGN-OFF 2026-08-07 — this is the explicit authorization FR-006 required.** The human chose
+**(a) + (c)**: cache jest's transform cache in CI, AND a scoped `testTimeout`. FR-006's prohibition
+on a `testTimeout` is therefore satisfied by explicit sign-off, not bypassed. Record it as such.
+
+- [X] T019 [US1] Give jest a stable, cacheable transform-cache location so CI can persist it
+  across runs. Define it in ONE place — `jest.config.js`'s `cacheDirectory` as a `<rootDir>`
+  relative path (e.g. `<rootDir>/.jest-cache`) — rather than duplicating a path string between
+  `jest.config.js` and the workflow. Add that directory to `.gitignore` (it currently has no cache
+  entries). Note and accept the one local side effect: a developer's jest cache moves location, so
+  their first run after this change rebuilds it once; that is benign and must be stated, not hidden.
+  Confirm jest does not try to treat its own cache directory as a test root or haste-map input.
+  *(FR-005; enables T020)*
+- [X] T020 [US1] Add an `actions/cache` step to `.github/workflows/ci.yml` caching that directory,
+  placed before the `./init.sh --skip-install` step. Key it on the things that actually invalidate a
+  babel transform: `package-lock.json` AND `babel.config.js` AND `jest.config.js` (plus a version
+  prefix so the key can be rotated by hand). Include a sensible `restore-keys` fallback. Be explicit
+  in a comment that a cache MISS (first run, or after any of those files change) still pays the full
+  cold cost — this improves the common case, it does not remove the worst case, which is exactly why
+  T021 is also needed. *(FR-005)*
+- [X] T021 [US1] Add a scoped `--testTimeout` to the **CI-only** jest invocation in `init.sh` stage 7
+  (alongside the existing `--runInBand --verbose`), sized with real margin over the measured
+  worst case — 15000ms against a measured 3885ms cold. **Scope it to CI deliberately**: do NOT put
+  `testTimeout` in `jest.config.js`, so a developer's local run keeps jest's strict 5000ms default
+  and a genuinely slow test is still caught in development. A per-file `jest.setTimeout` is NOT an
+  option here — that would edit `src/features/identity/LoginScreen.test.tsx`, which FR-002 forbids.
+  The comment must record that this exists to absorb unavoidable cold-cache transform cost on a
+  shared runner, not to excuse slow tests, and must cite the human's sign-off. *(FR-006 as amended
+  by the sign-off above, SC-001)*
+- [X] T022 [US1] **LOCAL HALF DONE, CI HALF OUTSTANDING (owned by the orchestrator).** Verify
+  locally: (a) with no `CI` env var, `npm test`/`./init.sh` still uses the
+  parallel path with jest's default 5000ms timeout and no `--verbose`; (b) with `CI=true`, the run
+  reports `--runInBand` and passes. Then push to PR #10's branch and, from the real run, record in
+  `progress/impl_015-ci-test-timeout.md`: the target test's measured duration on a cache MISS and
+  (by re-running) on a cache HIT, `CrearCuentaScreen`'s first test, the total job duration, and
+  whether the `actions/cache` step reported a hit or miss. Evaluate against SC-001/SC-004/SC-006.
+  The cold-miss number will likely still exceed 3000ms — that is expected and is precisely what
+  T021's timeout covers; say so plainly rather than presenting the warm number as if it were the
+  only one. *(FR-005, FR-007, SC-001, SC-004, SC-006)* **Push + real CI evidence is the
+  orchestrator's step, not performed in this run — see progress/impl_015-ci-test-timeout.md.**
+
+**Checkpoint**: typical CI runs are fast because the transform cache persists, and cold-miss runs
+are robust rather than 22%-margin fragile because the CI-only ceiling absorbs them — with both the
+hit and miss durations measured and recorded, not inferred.
+
+---
+
 ## Phase 4: User Story 2 - The systemic risk is reduced, not just patched for one test (Priority: P2)
 
 **Goal**: Confirm the fix's scope is genuinely repo-wide, not accidentally scoped to

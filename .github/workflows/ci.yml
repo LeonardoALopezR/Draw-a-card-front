@@ -28,6 +28,25 @@ jobs:
 
       - run: npm ci
 
+      # specs/015-ci-test-timeout Round 3: persist jest's babel transform cache
+      # (jest.config.js's cacheDirectory: "<rootDir>/.jest-cache") across runs. Measured
+      # locally, same test, --runInBand throughout, only cache state varying: warm 147ms vs. a
+      # cleared cache 1666ms (11x) — CI's cache is always cold without this step, so every run
+      # pays the full babel-transform cost the first time a render() triggers React Native's
+      # lazy module requires. Key rotates on the inputs that actually invalidate a babel
+      # transform (lockfile = dependency versions, babel/jest config = transform rules); bump
+      # the "v1" prefix by hand if the cache ever needs a manual, unconditional reset.
+      # IMPORTANT: a cache MISS (first run ever, or any run after one of the keyed files
+      # changes) still pays the full cold-cache cost described above — this step improves the
+      # common case, it does not remove the worst case, which is exactly why T021's CI-only
+      # --testTimeout also exists.
+      - uses: actions/cache@v4
+        with:
+          path: .jest-cache
+          key: v1-jest-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'babel.config.js', 'jest.config.js') }}
+          restore-keys: |
+            v1-jest-cache-${{ runner.os }}-
+
       - run: ./init.sh --skip-install
 
       # init.sh summarizes each stage with only a short `tail` of its log and writes the full
