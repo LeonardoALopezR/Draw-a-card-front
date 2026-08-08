@@ -30,12 +30,16 @@ jobs:
 
       - run: ./init.sh --skip-install
 
-      # init.sh summarizes a failed stage with only `tail -n 5` of its log, which is enough
-      # locally (the full log is still on disk) but leaves a CI reader unable to see the actual
-      # assertion — the stage is identifiable, the cause is not. Dump the full logs on failure so
-      # the check's own output is sufficient to diagnose the break (spec.md SC-004).
-      - name: Dump init.sh stage logs on failure
-        if: failure()
+      # init.sh summarizes each stage with only a short `tail` of its log and writes the full
+      # output to /tmp, which is fine locally (the file is still on disk) but useless on a runner
+      # whose filesystem is gone when the job ends. Dump every stage log so the check's own output
+      # is sufficient both to diagnose a break (014 SC-004) and to read timings off a PASSING run
+      # — a green run used to hide jest's per-suite durations entirely, which made
+      # 015-ci-test-timeout's own timing criteria (SC-001/SC-004) unverifiable from CI. Runs with
+      # `always()` rather than `failure()` for that reason. Each log is wrapped in a ::group:: so
+      # it stays collapsed and costs a reader nothing unless they open it.
+      - name: Dump init.sh stage logs
+        if: always()
         run: |
           for log in /tmp/init-sh-front-*.log; do
             [ -f "$log" ] || continue
