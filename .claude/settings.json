@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/leo/Desktop/DrawACard/Draw-a-card-front && if [ -x node_modules/.bin/tsc ]; then node_modules/.bin/tsc --noEmit 2>&1 | tail -20; else echo \"[harness] skip type-check: run ./init.sh first to install deps\"; fi",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && if [ -x node_modules/.bin/tsc ]; then node_modules/.bin/tsc --noEmit 2>&1 | tail -20; else echo \"[harness] skip type-check: run ./init.sh first to install deps\"; fi",
             "description": "Fast type-check after every edit — cheap feedback without running the full build/test suite.",
             "timeout": 60
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/leo/Desktop/DrawACard/Draw-a-card-front && ./init.sh --skip-build > /tmp/init-sh-front-stop-hook.log 2>&1 || { tail -40 /tmp/init-sh-front-stop-hook.log; exit 2; }",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && ./init.sh --skip-build > /tmp/init-sh-front-stop-hook.log 2>&1 || { tail -40 /tmp/init-sh-front-stop-hook.log; exit 2; }",
             "description": "Install/type-check/expo-doctor/tests verification, run in the background after each turn. Skips the slower web export build check. Only interrupts if it actually fails.",
             "timeout": 300,
             "async": true,
